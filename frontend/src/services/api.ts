@@ -13,7 +13,20 @@ import {
 } from '../types';
 
 // API base URL - configure based on environment
-const API_BASE_URL = process.env.REACT_NATIVE_API_URL || 'http://localhost:3001';
+// In Codespaces, we need to use the forwarded port URL
+const getApiBaseUrl = () => {
+  // Check if we're in a browser and in Codespaces
+  if (typeof window !== 'undefined' && window.location.hostname.includes('app.github.dev')) {
+    // Extract the codespace name from current URL and construct backend URL
+    const hostname = window.location.hostname;
+    // Replace the port in the hostname (e.g., -8081 or similar) with -3001
+    const backendHostname = hostname.replace(/-\d+\.app\.github\.dev/, '-3001.app.github.dev');
+    return `https://${backendHostname}`;
+  }
+  return process.env.REACT_NATIVE_API_URL || 'http://localhost:3001';
+};
+
+const API_BASE_URL = getApiBaseUrl();
 
 /**
  * Generic fetch wrapper with error handling
@@ -23,6 +36,7 @@ async function fetchApi<T>(
   options: RequestInit = {}
 ): Promise<T> {
   const url = `${API_BASE_URL}${endpoint}`;
+  console.log('Making API request to:', url);
   
   const response = await fetch(url, {
     headers: {

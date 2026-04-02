@@ -9,8 +9,8 @@ import {
   Text,
   StyleSheet,
   ScrollView,
+  Platform,
 } from 'react-native';
-import Slider from '@react-native-community/slider';
 import {
   GroupPreferences,
   PreferenceDimension,
@@ -22,6 +22,30 @@ interface PreferenceSlidersProps {
   onPreferencesChange: (preferences: GroupPreferences) => void;
   disabled?: boolean;
 }
+
+// Simple custom slider that works on web
+const SimpleSlider = ({ value, onValueChange, disabled }: {
+  value: number;
+  onValueChange: (val: number) => void;
+  disabled?: boolean;
+}) => {
+  // Using createElement to avoid TypeScript JSX issues with HTML elements
+  return React.createElement('input', {
+    type: 'range',
+    min: 0,
+    max: 10,
+    step: 1,
+    value: value,
+    onChange: (e: any) => onValueChange(parseInt(e.target.value)),
+    disabled: disabled,
+    style: {
+      flex: 1,
+      height: 40,
+      margin: '0 8px',
+      accentColor: '#4A90D9',
+    },
+  });
+};
 
 export const PreferenceSliders: React.FC<PreferenceSlidersProps> = ({
   preferences,
@@ -52,16 +76,9 @@ export const PreferenceSliders: React.FC<PreferenceSlidersProps> = ({
           
           <View style={styles.sliderRow}>
             <Text style={styles.endLabel}>{config.lowLabel}</Text>
-            <Slider
-              style={styles.slider}
-              minimumValue={0}
-              maximumValue={10}
-              step={1}
+            <SimpleSlider
               value={preferences[config.key]}
               onValueChange={(value) => handleSliderChange(config.key, value)}
-              minimumTrackTintColor="#4A90D9"
-              maximumTrackTintColor="#E0E0E0"
-              thumbTintColor="#4A90D9"
               disabled={disabled}
             />
             <Text style={styles.endLabel}>{config.highLabel}</Text>
@@ -117,11 +134,6 @@ const styles = StyleSheet.create({
   sliderRow: {
     flexDirection: 'row',
     alignItems: 'center',
-  },
-  slider: {
-    flex: 1,
-    height: 40,
-    marginHorizontal: 8,
   },
   endLabel: {
     fontSize: 12,

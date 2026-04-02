@@ -1,20 +1,45 @@
 /**
  * MapScreen Component
- * Displays recommended destinations on an interactive U.S. map
+ * Displays recommended destinations on an interactive U.S. map using Leaflet
  */
 
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   View,
   StyleSheet,
-  Dimensions,
   ActivityIndicator,
   Text,
+  Platform,
 } from 'react-native';
-import MapView, { Marker, Region, PROVIDER_GOOGLE } from 'react-native-maps';
 import { RecommendationWithEstimate } from '../types';
-import { DestinationMarker } from '../components/DestinationMarker';
 import { DestinationCard } from '../components/DestinationCard';
+
+// Leaflet imports (web only)
+let MapContainer: any;
+let TileLayer: any;
+let Marker: any;
+let Popup: any;
+let useMap: any;
+let L: any;
+
+if (Platform.OS === 'web') {
+  const leaflet = require('leaflet');
+  const reactLeaflet = require('react-leaflet');
+  MapContainer = reactLeaflet.MapContainer;
+  TileLayer = reactLeaflet.TileLayer;
+  Marker = reactLeaflet.Marker;
+  Popup = reactLeaflet.Popup;
+  useMap = reactLeaflet.useMap;
+  L = leaflet;
+
+  // Fix default marker icons
+  delete (L.Icon.Default.prototype as any)._getIconUrl;
+  L.Icon.Default.mergeOptions({
+    iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
+    iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
+    shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
+  });
+}
 
 interface MapScreenProps {
   recommendations: RecommendationWithEstimate[];
@@ -23,12 +48,45 @@ interface MapScreenProps {
   loading?: boolean;
 }
 
-// Initial region centered on continental US
-const US_CENTER_REGION: Region = {
-  latitude: 39.8283,
-  longitude: -98.5795,
-  latitudeDelta: 35,
-  longitudeDelta: 50,
+// Custom marker icon based on score
+const createCustomIcon = (score: number, rank: number) => {
+  if (!L) return null;
+  
+  const color = score >= 80 ? '#4CAF50' : score >= 60 ? '#8BC34A' : '#FFC107';
+  
+  return L.divIcon({
+    className: 'custom-marker',
+    html: `<div style="
+      background-color: ${color};
+      width: 30px;
+      height: 30px;
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: white;
+      font-weight: bold;
+      font-size: 14px;
+      border: 3px solid white;
+      box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+    ">${rank}</div>`,
+    iconSize: [30, 30],
+    iconAnchor: [15, 15],
+  });
+};
+
+// Component to fit map bounds
+const FitBounds: React.FC<{ recommendations: RecommendationWithEstimate[] }> = ({ recommendations }) => {
+  const map = useMap();
+  
+  useEffect(() => {
+    if (recommendations.length > 0) {
+      const bounds = recommendations.map(r => [r.latitude, r.longitude] as [number, number]);
+      map.fitBounds(bounds, { padding: [50, 50] });
+    }
+  }, [recommendations, map]);
+  
+  return null;
 };
 
 export const MapScreen: React.FC<MapScreenProps> = ({
@@ -37,52 +95,32 @@ export const MapScreen: React.FC<MapScreenProps> = ({
   onSelectDestination,
   loading = false,
 }) => {
-  const mapRef = useRef<MapView>(null);
-  const [selectedDestination, setSelectedDestination] = useState<RecommendationWithEstimate | null>(null);
+  const [selectedDestination, setSelectedDestination] = useState<RecommendationWithEstimate | null>(
+    selectedDestinationId 
+      ? recommendations.find(r => r.id === selectedDestinationId) || null 
+      : null
+  );
+  const [cssLoaded, setCssLoaded] = useState(false);
 
-  // Update selected destination when prop changes
+  // Load Leaflet CSS
   useEffect(() => {
-    if (selectedDestinationId) {
-      const dest = recommendations.find((r) => r.id === selectedDestinationId);
-      if (dest) {
-        setSelectedDestination(dest);
-        // Animate to selected destination
-        mapRef.current?.animateToRegion({
-          latitude: dest.latitude,
-          longitude: dest.longitude,
-          latitudeDelta: 5,
-          longitudeDelta: 5,
-        }, 500);
-      }
-    } else {
-      setSelectedDestination(null);
+    if (Platform.OS === 'web' && !cssLoaded) {
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css';
+      document.head.appendChild(link);
+      setCssLoaded(true);
     }
-  }, [selectedDestinationId, recommendations]);
+  }, [cssLoaded]);
 
-  const handleMarkerPress = (destination: RecommendationWithEstimate) => {
-    setSelectedDestination(destination);
-    onSelectDestination?.(destination.id);
-
-    // Animate to marker
-    mapRef.current?.animateToRegion({
-      latitude: destination.latitude,
-      longitude: destination.longitude,
-      latitudeDelta: 5,
-      longitudeDelta: 5,
-    }, 300);
+  const handleSelect = (dest: RecommendationWithEstimate) => {
+    setSelectedDestination(dest);
+    onSelectDestination?.(dest.id);
   };
 
-  const handleMapPress = () => {
+  const handleClose = () => {
     setSelectedDestination(null);
     onSelectDestination?.(null);
-  };
-
-  const handleCloseCard = () => {
-    setSelectedDestination(null);
-    onSelectDestination?.(null);
-    
-    // Zoom back out to US view
-    mapRef.current?.animateToRegion(US_CENTER_REGION, 300);
   };
 
   if (loading) {
@@ -104,47 +142,69 @@ export const MapScreen: React.FC<MapScreenProps> = ({
     );
   }
 
+  // U.S. center coordinates
+  const usCenter: [number, number] = [39.8283, -98.5795];
+
+  if (Platform.OS !== 'web' || !MapContainer) {
+    return (
+      <View style={styles.emptyContainer}>
+        <Text style={styles.emptyText}>Map not available on this platform</Text>
+      </View>
+    );
+  }
+
   return (
     <View style={styles.container}>
-      <MapView
-        ref={mapRef}
-        style={styles.map}
-        provider={PROVIDER_GOOGLE}
-        initialRegion={US_CENTER_REGION}
-        onPress={handleMapPress}
-        mapType="standard"
-        showsUserLocation={false}
-        showsPointsOfInterest={false}
+      <MapContainer
+        center={usCenter}
+        zoom={4}
+        style={{ width: '100%', height: '100%' }}
+        scrollWheelZoom={true}
       >
-        {recommendations.map((destination, index) => (
+        <TileLayer
+          attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+        />
+        <FitBounds recommendations={recommendations} />
+        
+        {recommendations.map((dest, index) => (
           <Marker
-            key={destination.id}
-            coordinate={{
-              latitude: destination.latitude,
-              longitude: destination.longitude,
+            key={dest.id}
+            position={[dest.latitude, dest.longitude]}
+            icon={createCustomIcon(dest.score, index + 1)}
+            eventHandlers={{
+              click: () => handleSelect(dest),
             }}
-            onPress={() => handleMarkerPress(destination)}
-            tracksViewChanges={false}
           >
-            <DestinationMarker
-              rank={index + 1}
-              score={destination.score}
-              isSelected={selectedDestination?.id === destination.id}
-            />
+            <Popup>
+              <div style={{ minWidth: 150 }}>
+                <strong style={{ fontSize: 14 }}>{dest.city}, {dest.state}</strong>
+                <div style={{ color: '#4A90D9', fontWeight: 'bold', marginTop: 4 }}>
+                  Score: {dest.score}
+                </div>
+                <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
+                  {dest.reason}
+                </div>
+                {dest.estimate && (
+                  <div style={{ fontSize: 12, color: '#333', marginTop: 8 }}>
+                    Est. Cost: ${dest.estimate.low.toLocaleString()} - ${dest.estimate.high.toLocaleString()}
+                  </div>
+                )}
+              </div>
+            </Popup>
           </Marker>
         ))}
-      </MapView>
+      </MapContainer>
 
       {selectedDestination && (
         <View style={styles.cardContainer}>
           <DestinationCard
             destination={selectedDestination}
-            onClose={handleCloseCard}
+            onClose={handleClose}
           />
         </View>
       )}
 
-      {/* Legend */}
       <View style={styles.legend}>
         <Text style={styles.legendTitle}>Match Score</Text>
         <View style={styles.legendItems}>
@@ -166,14 +226,10 @@ export const MapScreen: React.FC<MapScreenProps> = ({
   );
 };
 
-const { height } = Dimensions.get('window');
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-  },
-  map: {
-    flex: 1,
+    backgroundColor: '#E8F4F8',
   },
   loadingContainer: {
     flex: 1,
@@ -203,12 +259,11 @@ const styles = StyleSheet.create({
     bottom: 20,
     left: 16,
     right: 16,
-    maxHeight: height * 0.45,
   },
   legend: {
     position: 'absolute',
-    top: 16,
-    right: 16,
+    top: 10,
+    right: 10,
     backgroundColor: 'rgba(255, 255, 255, 0.95)',
     borderRadius: 8,
     padding: 10,
@@ -217,6 +272,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 4,
     elevation: 3,
+    zIndex: 1000,
   },
   legendTitle: {
     fontSize: 11,

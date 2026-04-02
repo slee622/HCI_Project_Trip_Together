@@ -10,7 +10,6 @@ import {
   Text,
   StyleSheet,
   TouchableOpacity,
-  Alert,
   TextInput,
   ScrollView,
 } from 'react-native';
@@ -35,6 +34,8 @@ const DEFAULT_TRIP_DETAILS = {
 };
 
 const App: React.FC = () => {
+  console.log('App component rendering...');
+  
   // State
   const [activeTab, setActiveTab] = useState<Tab>('preferences');
   const [preferences, setPreferences] = useState<GroupPreferences>(DEFAULT_PREFERENCES);
@@ -47,6 +48,9 @@ const App: React.FC = () => {
 
   // Fetch recommendations
   const handleGetRecommendations = useCallback(async () => {
+    console.log('Button clicked! Fetching recommendations...');
+    console.log('Preferences:', preferences);
+    console.log('Trip details:', tripDetails);
     setLoading(true);
     try {
       const results = await getRecommendationsWithEstimates(
@@ -54,14 +58,11 @@ const App: React.FC = () => {
         tripDetails,
         10
       );
+      console.log('Got results:', results);
       setRecommendations(results);
       setActiveTab('list');
     } catch (error) {
       console.error('Failed to get recommendations:', error);
-      Alert.alert(
-        'Error',
-        'Failed to get recommendations. Please check your connection and try again.'
-      );
     } finally {
       setLoading(false);
     }
