@@ -1,0 +1,13 @@
+**Travel Together Technical Requirements**
+
+1. **"Hello world" app.** Our team is going to implement our UI in React Native. We will make a one-screen React Native app with "Hello World" on the opening screen. We will show that we are able to open it on our target device \- a desktop computer.  
+2. **"Hello styles."** Our team will implement an example of everything within our [style guide](?tab=t.889iz2vhnoua) using the styling languages / libraries that we have chosen.  
+3. **Real-time group data sync.**  We need to show that when one user changes a preference slider or vote that all other users can see the updated value without refreshing and in a timely manner. These preferences and votes also must be tied to a user identity.  
+4. **Persistent trip data.** We need to be able to store trip sessions, user preferences, votes, recommended options, and selected options in a backend database and correctly retrieve this data on app open if it exists.  
+5.  **User identity & Group management.** We need to be able to invite users to (and users need to be able to join) a vacation planning group. And each user needs to be able to have a unique identity that other users can use to distinguish them from the rest of the users.  
+6. **Interactive map.** There needs to be an interactive map of the U.S. which has rendered geographic markers on them for suggested locations.  
+7. **Flight and Hotel Search & Cost estimation.** We need to show that our app can call a flight/hotel data API and return valid flight and accommodation options for selected dates and destinations including price. Given the amount of users, source location, destination location, and other preferences, we need to be able to give an estimated range for the total cost of a trip to a destination.   
+8. **Destination Recommendations.** Given user preferences, we need to be able to competently recommend a set of places for the users to travel. For each recommended destination, the app should transparently be able to show why it was ranked highly based on group preferences. Also, with user votes, we need to be able to recommend a singular “best” destination.  
+9. **Navigation between stages**. We need to be able to seamlessly navigate between different stages and correctly “lock” stages from editing when appropriate.  
+10.  **Dragging feature.** Since the user need to drag the slider for preference and we need to enable the drag to compare  
+11.  **Data Gathering/Generation.** We need to gather data on locations for various spots on metrics like relaxing/budget-friendly/weather/food-focused/etc. Or, if we cannot find such data, we must generate that data with AI.
