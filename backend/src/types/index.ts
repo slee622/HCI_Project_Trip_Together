@@ -18,20 +18,35 @@ export interface Destination {
   urbanScore: number;       // 0-10, higher = more urban
   natureScore: number;      // 0-10, higher = more nature-focused
   foodScore: number;        // 0-10, higher = better food scene
-  nightlifeScore: number;   // 0-10, higher = better nightlife
+  nightlifeScore: number;   // 0-10, higher = better nightlife (used for adventure)
   relaxationScore: number;  // 0-10, higher = more relaxing
   shortDescription: string;
   imageUrl?: string | null;
 }
 
 // ============================================
-// GROUP PREFERENCES TYPES
+// USER PREFERENCES TYPES (5 dimensions matching UI sliders)
 // ============================================
 
 /**
- * GroupPreferences represents the combined travel preferences for a group
- * TODO: Teammates will integrate this with their group/session system
- * For now, this is passed directly from the frontend
+ * UserPreferences represents the 5 slider dimensions in the UI
+ * These map to destination scores for recommendation matching
+ */
+export interface UserPreferences {
+  adventure: number;   // 0=Relaxing, 10=Adventurous (maps to nightlifeScore)
+  budget: number;      // 0=Budget, 10=Splurge (maps to budgetScore)
+  setting: number;     // 0=City, 10=Nature (maps to natureScore, inverse of urbanScore)
+  weather: number;     // 0=Warm, 10=Cool (inverse of temperatureScore)
+  focus: number;       // 0=Food-focused, 10=Experience (inverse of foodScore)
+}
+
+// ============================================
+// GROUP PREFERENCES TYPES (for API compatibility)
+// ============================================
+
+/**
+ * GroupPreferences - the format sent to the recommendation API
+ * Derived from UserPreferences with proper mappings
  */
 export interface GroupPreferences {
   temperature: number;  // 0-10, higher = prefer warmer
@@ -39,7 +54,7 @@ export interface GroupPreferences {
   urban: number;        // 0-10, higher = prefer city
   nature: number;       // 0-10, higher = prefer nature
   food: number;         // 0-10, higher = prioritize food
-  nightlife: number;    // 0-10, higher = prioritize nightlife
+  nightlife: number;    // 0-10, higher = prioritize nightlife/adventure
   relaxation: number;   // 0-10, higher = prioritize relaxation
 }
 

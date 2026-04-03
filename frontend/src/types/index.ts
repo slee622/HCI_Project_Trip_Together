@@ -4,7 +4,43 @@
  */
 
 // ============================================
-// GROUP PREFERENCES TYPES
+// USER PREFERENCES (5 slider dimensions)
+// ============================================
+
+export type SliderDimension = 'adventure' | 'budget' | 'setting' | 'weather' | 'focus';
+
+export interface UserPreferences {
+  adventure: number; // 0=Relaxing, 10=Adventurous
+  budget: number;    // 0=Budget, 10=Splurge
+  setting: number;   // 0=City, 10=Nature
+  weather: number;   // 0=Warm, 10=Cool
+  focus: number;     // 0=Food-focused, 10=Experience
+}
+
+export interface SliderConfig {
+  key: SliderDimension;
+  lowLabel: string;
+  highLabel: string;
+}
+
+export const SLIDER_CONFIGS: SliderConfig[] = [
+  { key: 'adventure', lowLabel: 'Relaxing', highLabel: 'Adventurous' },
+  { key: 'budget', lowLabel: 'Budget', highLabel: 'Splurge' },
+  { key: 'setting', lowLabel: 'City', highLabel: 'Nature' },
+  { key: 'weather', lowLabel: 'Warm weather', highLabel: 'Cool weather' },
+  { key: 'focus', lowLabel: 'Food-focused', highLabel: 'Experience' },
+];
+
+export const DEFAULT_PREFERENCES: UserPreferences = {
+  adventure: 5,
+  budget: 5,
+  setting: 5,
+  weather: 5,
+  focus: 5,
+};
+
+// ============================================
+// GROUP PREFERENCES (for API compatibility)
 // ============================================
 
 export interface GroupPreferences {
@@ -15,6 +51,39 @@ export interface GroupPreferences {
   food: number;
   nightlife: number;
   relaxation: number;
+}
+
+/**
+ * Convert user slider preferences to API group preferences
+ * Handles the mapping/inversion between UI sliders and backend scoring
+ */
+export function userPrefsToGroupPrefs(prefs: UserPreferences): GroupPreferences {
+  return {
+    // weather: 0=Warm, 10=Cool → temperature: 0=Cool, 10=Warm (invert)
+    temperature: 10 - prefs.weather,
+    // budget: direct mapping
+    budget: prefs.budget,
+    // setting: 0=City, 10=Nature → urban is inverse, nature is direct
+    urban: 10 - prefs.setting,
+    nature: prefs.setting,
+    // focus: 0=Food, 10=Experience → food is inverse
+    food: 10 - prefs.focus,
+    // adventure: 0=Relaxing, 10=Adventurous → nightlife=direct, relaxation=inverse
+    nightlife: prefs.adventure,
+    relaxation: 10 - prefs.adventure,
+  };
+}
+
+// ============================================
+// COMPARE TYPES
+// ============================================
+
+export interface CompareDestination {
+  id: string;
+  city: string;
+  state: string;
+  category: string;
+  priceRange: string;
 }
 
 // ============================================
@@ -74,45 +143,3 @@ export interface TripEstimateRequest {
 export interface RecommendationWithEstimate extends RecommendationResult {
   estimate?: TripEstimate;
 }
-
-// ============================================
-// PREFERENCE METADATA
-// ============================================
-
-export type PreferenceDimension = 
-  | 'temperature'
-  | 'budget'
-  | 'urban'
-  | 'nature'
-  | 'food'
-  | 'nightlife'
-  | 'relaxation';
-
-export interface PreferenceConfig {
-  key: PreferenceDimension;
-  name: string;
-  lowLabel: string;
-  highLabel: string;
-  icon: string;
-}
-
-export const PREFERENCE_CONFIGS: PreferenceConfig[] = [
-  { key: 'temperature', name: 'Temperature', lowLabel: 'Cool', highLabel: 'Warm', icon: '🌡️' },
-  { key: 'budget', name: 'Budget', lowLabel: 'Budget', highLabel: 'Splurge', icon: '💰' },
-  { key: 'urban', name: 'Setting', lowLabel: 'Rural', highLabel: 'City', icon: '🏙️' },
-  { key: 'nature', name: 'Nature', lowLabel: 'Indoor', highLabel: 'Outdoors', icon: '🌲' },
-  { key: 'food', name: 'Food', lowLabel: 'Basic', highLabel: 'Foodie', icon: '🍽️' },
-  { key: 'nightlife', name: 'Nightlife', lowLabel: 'Quiet', highLabel: 'Party', icon: '🌙' },
-  { key: 'relaxation', name: 'Pace', lowLabel: 'Active', highLabel: 'Relaxing', icon: '🧘' },
-];
-
-// Default preferences (middle values)
-export const DEFAULT_PREFERENCES: GroupPreferences = {
-  temperature: 5,
-  budget: 5,
-  urban: 5,
-  nature: 5,
-  food: 5,
-  nightlife: 5,
-  relaxation: 5,
-};
