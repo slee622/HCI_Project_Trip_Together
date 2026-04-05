@@ -3,6 +3,7 @@ import { Platform } from 'react-native';
 const SUPABASE_URL = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/+$/, '');
 const SUPABASE_ANON_KEY = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
 const SESSION_STORAGE_KEY = 'trip_together.auth_session';
+let inMemorySession: AuthSession | null = null;
 
 interface WebStorageLike {
   getItem: (key: string) => string | null;
@@ -146,31 +147,36 @@ export async function signOut(accessToken: string): Promise<void> {
 
 export async function getStoredSession(): Promise<AuthSession | null> {
   const storage = getStorage();
-  if (!storage) return null;
+  if (!storage) return inMemorySession;
 
   const raw = storage.getItem(SESSION_STORAGE_KEY);
-  if (!raw) return null;
+  if (!raw) return inMemorySession;
 
   try {
     const parsed = JSON.parse(raw);
     if (!parsed?.accessToken || !parsed?.refreshToken || !parsed?.user?.id) {
       storage.removeItem(SESSION_STORAGE_KEY);
+      inMemorySession = null;
       return null;
     }
-    return parsed as AuthSession;
+    inMemorySession = parsed as AuthSession;
+    return inMemorySession;
   } catch {
     storage.removeItem(SESSION_STORAGE_KEY);
+    inMemorySession = null;
     return null;
   }
 }
 
 export async function persistSession(session: AuthSession): Promise<void> {
+  inMemorySession = session;
   const storage = getStorage();
   if (!storage) return;
   storage.setItem(SESSION_STORAGE_KEY, JSON.stringify(session));
 }
 
 export async function clearStoredSession(): Promise<void> {
+  inMemorySession = null;
   const storage = getStorage();
   if (!storage) return;
   storage.removeItem(SESSION_STORAGE_KEY);

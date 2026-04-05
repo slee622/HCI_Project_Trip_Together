@@ -7,6 +7,7 @@ import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
 import { TripPlannerScreen } from './screens/TripPlannerScreen';
 import { LoginScreen } from './screens/LoginScreen';
+import { CreateTripScreen, CreatedTripDetails } from './screens/CreateTripScreen';
 import {
   AuthSession,
   clearStoredSession,
@@ -14,10 +15,25 @@ import {
   getStoredSession,
   signOut,
 } from './services/auth';
+import { getMyStartupState, StartupState } from './services/startupState';
+
+type AppView = 'create-trip' | 'planner';
+
+interface PlannerTripDetails {
+  origin: string;
+  dateRange: string;
+  departureDate: string;
+  returnDate: string;
+  travelers: number;
+}
 
 const App: React.FC = () => {
   const [session, setSession] = useState<AuthSession | null>(null);
   const [bootstrapping, setBootstrapping] = useState(true);
+  const [loadingStartup, setLoadingStartup] = useState(false);
+  const [view, setView] = useState<AppView>('create-trip');
+  const [startupState, setStartupState] = useState<StartupState | null>(null);
+  const [plannerTripDetails, setPlannerTripDetails] = useState<PlannerTripDetails | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -46,6 +62,57 @@ const App: React.FC = () => {
     setSession(newSession);
   }, []);
 
+  useEffect(() => {
+    let mounted = true;
+
+    const loadStartup = async () => {
+      if (!session) {
+        if (mounted) {
+          setStartupState(null);
+          setLoadingStartup(false);
+          setView('create-trip');
+        }
+        return;
+      }
+
+      setLoadingStartup(true);
+
+      try {
+        const data = await getMyStartupState();
+        if (mounted) {
+          setStartupState(data);
+        }
+      } catch (error) {
+        console.warn('Failed to load startup state:', error);
+        if (mounted) {
+          setStartupState(null);
+        }
+      } finally {
+        if (mounted) {
+          setLoadingStartup(false);
+          setView('create-trip');
+        }
+      }
+    };
+
+    loadStartup();
+
+    return () => {
+      mounted = false;
+    };
+  }, [session]);
+
+  const handleTripCreated = useCallback((trip: CreatedTripDetails) => {
+    setPlannerTripDetails({
+      origin: trip.origin,
+      dateRange: trip.dateRange,
+      departureDate: trip.departureDate,
+      returnDate: trip.returnDate,
+      travelers: trip.travelers,
+    });
+    setView('planner');
+  }, []);
+
   const handleSignOut = useCallback(async () => {
     if (!session) return;
 
@@ -56,6 +123,9 @@ const App: React.FC = () => {
     } finally {
       await clearStoredSession();
       setSession(null);
+      setPlannerTripDetails(null);
+      setStartupState(null);
+      setView('create-trip');
     }
   }, [session]);
 
@@ -81,11 +151,36 @@ const App: React.FC = () => {
     );
   }
 
+  if (loadingStartup) {
+    return (
+      <View style={styles.centered}>
+        <ActivityIndicator size="large" color="#F5A623" />
+        <Text style={styles.message}>Loading trip data...</Text>
+      </View>
+    );
+  }
+
   if (!session) {
     return <LoginScreen onAuthenticated={handleAuthenticated} />;
   }
 
-  return <TripPlannerScreen onSignOut={handleSignOut} />;
+  if (view === 'create-trip') {
+    return (
+      <CreateTripScreen
+        startupState={startupState}
+        onTripCreated={handleTripCreated}
+        onSignOut={handleSignOut}
+      />
+    );
+  }
+
+  return (
+    <TripPlannerScreen
+      onSignOut={handleSignOut}
+      onBack={() => setView('create-trip')}
+      tripDetails={plannerTripDetails || undefined}
+    />
+  );
 };
 
 export default App;

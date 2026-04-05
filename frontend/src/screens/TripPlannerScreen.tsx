@@ -3,7 +3,7 @@
  * Main screen with sidebar layout matching the mockup design
  */
 
-import React, { useState, useCallback, useEffect, useRef } from 'react';
+import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
 import { View, StyleSheet } from 'react-native';
 import {
   UserPreferences,
@@ -33,9 +33,23 @@ const DEBOUNCE_DELAY = 300;
 
 interface TripPlannerScreenProps {
   onSignOut?: () => void;
+  onBack?: () => void;
+  tripDetails?: {
+    origin: string;
+    dateRange: string;
+    departureDate: string;
+    returnDate: string;
+    travelers: number;
+  };
 }
 
-export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({ onSignOut }) => {
+export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
+  onSignOut,
+  onBack,
+  tripDetails,
+}) => {
+  const activeTrip = useMemo(() => tripDetails || DEFAULT_TRIP, [tripDetails]);
+
   // User preferences (5 sliders)
   const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
 
@@ -60,10 +74,10 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({ onSignOut 
       const results = await getRecommendationsWithEstimates(
         groupPrefs,
         {
-          origin: DEFAULT_TRIP.origin,
-          travelers: DEFAULT_TRIP.travelers,
-          departureDate: DEFAULT_TRIP.departureDate,
-          returnDate: DEFAULT_TRIP.returnDate,
+          origin: activeTrip.origin,
+          travelers: activeTrip.travelers,
+          departureDate: activeTrip.departureDate,
+          returnDate: activeTrip.returnDate,
         },
         10
       );
@@ -73,12 +87,12 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({ onSignOut 
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [activeTrip]);
 
   // Load recommendations on mount
   useEffect(() => {
     fetchRecommendations(preferences);
-  }, []);
+  }, [fetchRecommendations, preferences]);
 
   // Handle preference change from sliders
   const handlePreferenceChange = useCallback((
@@ -147,10 +161,10 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({ onSignOut 
     <View style={styles.container}>
       {/* Header */}
       <Header
-        origin={DEFAULT_TRIP.origin}
-        dateRange={DEFAULT_TRIP.dateRange}
+        origin={activeTrip.origin}
+        dateRange={activeTrip.dateRange}
         users={[]}
-        onBack={() => console.log('Back pressed')}
+        onBack={onBack || (() => console.log('Back pressed'))}
         onDone={onSignOut || (() => console.log('Done pressed'))}
         doneLabel={onSignOut ? 'SIGN OUT' : 'DONE'}
       />

@@ -23,3 +23,12 @@
 
 8. **2026-04-05: Startup hydration is done via single RPC payload**
    Trip startup data retrieval is consolidated into `get_my_startup_state` and `get_trip_startup_state` so teammates can hydrate trip session, preferences, votes, recommendations, and selected option in one request. This avoids multi-query startup logic and keeps app-open behavior consistent.
+
+9. **2026-04-05: Authenticated app flow starts at Create Trip homepage**
+   After login, users land on a dedicated create-trip screen that captures departure, dates, and invite emails, then creates `trip_groups`, `trip_sessions`, and group invites through Supabase before entering the planner. This keeps MVP onboarding explicit and ensures group/trip persistence starts at app entry.
+
+10. **2026-04-05: Trip origin field expanded for airport or location text**
+    `trip_sessions.origin` was relaxed from short code-only length to allow up to 64 characters so users can enter either airport codes or readable location names. This aligns storage constraints with the homepage requirement.
+
+11. **2026-04-05: Trip creation uses RPC instead of direct table insert**
+    Homepage trip creation now calls `create_trip_session` so client flow does not depend on direct `trip_sessions` table privileges. This keeps writes consistent with the existing RPC-based group/invite approach and avoids permission errors.
