@@ -17,3 +17,6 @@
 
 6. **MVP-first write permissions**
    Recommendation writes are allowed for trip members to avoid blocking the current frontend/backend integration path during MVP. If needed later, this can be tightened to backend/service-role-only writes without changing table structure.
+
+7. **2026-04-05: Frontend login uses Supabase Auth directly**
+   The login page calls Supabase Auth endpoints from the Expo client using the public anon key and then gates app access on a stored session. This keeps MVP auth implementation fast and avoids adding a backend auth proxy layer right now.

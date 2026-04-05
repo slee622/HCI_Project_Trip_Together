@@ -31,7 +31,11 @@ const DEFAULT_TRIP = {
 // Debounce delay for fetching recommendations after preference changes (ms)
 const DEBOUNCE_DELAY = 300;
 
-export const TripPlannerScreen: React.FC = () => {
+interface TripPlannerScreenProps {
+  onSignOut?: () => void;
+}
+
+export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({ onSignOut }) => {
   // User preferences (5 sliders)
   const [preferences, setPreferences] = useState<UserPreferences>(DEFAULT_PREFERENCES);
 
@@ -147,7 +151,8 @@ export const TripPlannerScreen: React.FC = () => {
         dateRange={DEFAULT_TRIP.dateRange}
         users={[]}
         onBack={() => console.log('Back pressed')}
-        onDone={() => console.log('Done pressed')}
+        onDone={onSignOut || (() => console.log('Done pressed'))}
+        doneLabel={onSignOut ? 'SIGN OUT' : 'DONE'}
       />
 
       {/* Main Content */}
