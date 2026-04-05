@@ -32,6 +32,7 @@ interface CreateTripScreenProps {
   currentTrips?: MyTripSummary[];
   onAcceptInvite: (inviteCode: string) => Promise<void>;
   onRejectInvite: (inviteCode: string) => Promise<void>;
+  onOpenTrip: (tripSessionId: string) => Promise<void>;
   onTripCreated: (trip: CreatedTripDetails) => void;
   onSignOut: () => void;
 }
@@ -112,6 +113,7 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
   currentTrips = [],
   onAcceptInvite,
   onRejectInvite,
+  onOpenTrip,
   onTripCreated,
   onSignOut,
 }) => {
@@ -119,10 +121,9 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
   const isCompact = width < 980;
   const isMobile = width < 620;
 
-  const initialTrip = startupState?.tripSession;
-  const [origin, setOrigin] = useState(initialTrip?.origin || '');
-  const [departureDate, setDepartureDate] = useState(normalizeDate(initialTrip?.departureDate));
-  const [returnDate, setReturnDate] = useState(normalizeDate(initialTrip?.returnDate));
+  const [origin, setOrigin] = useState('');
+  const [departureDate, setDepartureDate] = useState('');
+  const [returnDate, setReturnDate] = useState('');
   const [invitePanelOpen, setInvitePanelOpen] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteEmails, setInviteEmails] = useState<string[]>([]);
@@ -130,15 +131,16 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
   const [error, setError] = useState<string | null>(null);
   const [inviteActionCode, setInviteActionCode] = useState<string | null>(null);
   const [inviteActionError, setInviteActionError] = useState<string | null>(null);
+  const [openingTripId, setOpeningTripId] = useState<string | null>(null);
+  const [openTripError, setOpenTripError] = useState<string | null>(null);
 
-  const existingMemberBadges = useMemo<TravelerBadge[]>(() => {
-    const members = startupState?.groupMembers || [];
-    return members.map((member, index) => ({
-      id: member.userId,
-      label: (member.displayName || member.handle || '?').trim().charAt(0).toUpperCase(),
-      color: AVATAR_COLORS[index % AVATAR_COLORS.length],
-    }));
-  }, [startupState]);
+  const existingMemberBadges = useMemo<TravelerBadge[]>(() => ([
+    {
+      id: 'self',
+      label: 'U',
+      color: AVATAR_COLORS[0],
+    },
+  ]), []);
 
   const pendingInviteBadges = useMemo<TravelerBadge[]>(() => {
     return inviteEmails.map((email, index) => ({
@@ -148,7 +150,7 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
     }));
   }, [inviteEmails, existingMemberBadges.length]);
 
-  const travelersCount = Math.max(1, existingMemberBadges.length || 1) + inviteEmails.length;
+  const travelersCount = 1 + inviteEmails.length;
   const dateRangeLabel = formatDateRange(departureDate, returnDate);
   const canSubmit = Boolean(origin.trim() && departureDate && returnDate && returnDate > departureDate);
 
@@ -239,6 +241,20 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
       setInviteActionError(message);
     } finally {
       setInviteActionCode(null);
+    }
+  };
+
+  const handleOpenTripPress = async (tripSessionId: string) => {
+    if (openingTripId) return;
+    setOpeningTripId(tripSessionId);
+    setOpenTripError(null);
+    try {
+      await onOpenTrip(tripSessionId);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to open trip.';
+      setOpenTripError(message);
+    } finally {
+      setOpeningTripId(null);
     }
   };
 
@@ -449,7 +465,16 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
           ) : (
             <View style={styles.currentTripsGrid}>
               {currentTrips.slice(0, 6).map((trip) => (
-                <View key={trip.id} style={styles.tripCard}>
+                <Pressable
+                  key={trip.id}
+                  style={({ pressed }) => [
+                    styles.tripCard,
+                    pressed ? styles.tripCardPressed : null,
+                    openingTripId === trip.id ? styles.tripCardLoading : null,
+                  ]}
+                  onPress={() => handleOpenTripPress(trip.id)}
+                  disabled={Boolean(openingTripId)}
+                >
                   <View style={styles.tripCardTopRow}>
                     <Text style={styles.tripCardTitle} numberOfLines={1}>
                       {trip.title}
@@ -461,11 +486,15 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
                   <Text style={styles.tripCardMeta} numberOfLines={1}>{trip.groupName}</Text>
                   <Text style={styles.tripCardMeta}>{trip.origin} · {formatDateRange(normalizeDate(trip.departureDate), normalizeDate(trip.returnDate))}</Text>
                   <Text style={styles.tripCardMeta}>Travelers: {trip.travelers}</Text>
-                </View>
+                  <Text style={styles.tripCardOpenHint}>
+                    {openingTripId === trip.id ? 'Opening...' : 'Open trip'}
+                  </Text>
+                </Pressable>
               ))}
             </View>
           )}
         </View>
+        {openTripError ? <Text style={styles.errorText}>{openTripError}</Text> : null}
         </View>
       </ScrollView>
     </View>
@@ -929,6 +958,13 @@ const styles = StyleSheet.create({
     padding: 12,
     gap: 4,
   },
+  tripCardPressed: {
+    borderColor: '#93C5FD',
+    backgroundColor: '#F8FAFF',
+  },
+  tripCardLoading: {
+    opacity: 0.72,
+  },
   tripCardTopRow: {
     flexDirection: 'row',
     justifyContent: 'space-between',
@@ -962,6 +998,12 @@ const styles = StyleSheet.create({
     color: '#4C5D76',
     fontSize: 13,
     fontWeight: '600',
+  },
+  tripCardOpenHint: {
+    marginTop: 6,
+    color: '#2563EB',
+    fontSize: 12,
+    fontWeight: '700',
   },
 });
 

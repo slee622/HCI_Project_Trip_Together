@@ -38,3 +38,6 @@
 
 13. **2026-04-05: Invite inbox is email-scoped with explicit accept/reject actions**
     Pending invites are surfaced via `list_my_pending_group_invites`, showing inviter identity and latest trip details for the group. Accept/reject actions are handled through RPCs so non-members can act on their invite without broad table read/write privileges.
+
+14. **2026-04-05: Startup read RPCs run as `security definer`**
+    Trip hydration RPCs were switched to definer mode so loading trip state does not depend on direct authenticated table grants. Authorization still stays explicit through existing membership checks inside the functions.

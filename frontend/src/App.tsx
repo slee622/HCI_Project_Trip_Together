@@ -17,6 +17,7 @@ import {
 } from './services/auth';
 import {
   acceptGroupInvite,
+  getTripStartupState,
   getMyStartupState,
   listMyPendingGroupInvites,
   listMyTripSessions,
@@ -34,6 +35,23 @@ interface PlannerTripDetails {
   departureDate: string;
   returnDate: string;
   travelers: number;
+}
+
+function formatDateRange(departureDate: string, returnDate: string): string {
+  if (!departureDate || !returnDate) return 'Select dates';
+
+  const start = new Date(`${departureDate}T00:00:00`);
+  const end = new Date(`${returnDate}T00:00:00`);
+  if (Number.isNaN(start.getTime()) || Number.isNaN(end.getTime())) return `${departureDate} - ${returnDate}`;
+
+  const startMonth = start.toLocaleDateString(undefined, { month: 'long' });
+  const endMonth = end.toLocaleDateString(undefined, { month: 'long' });
+  const startDay = start.getDate();
+  const endDay = end.getDate();
+
+  return startMonth === endMonth
+    ? `${startMonth} ${startDay} - ${endDay}`
+    : `${startMonth} ${startDay} - ${endMonth} ${endDay}`;
 }
 
 const App: React.FC = () => {
@@ -151,6 +169,50 @@ const App: React.FC = () => {
     setView('planner');
   }, []);
 
+  const handleOpenCurrentTrip = useCallback(async (tripSessionId: string) => {
+    const fallbackTrip = currentTrips.find((trip) => trip.id === tripSessionId);
+
+    if (fallbackTrip) {
+      setPlannerTripDetails({
+        origin: fallbackTrip.origin,
+        dateRange: formatDateRange(fallbackTrip.departureDate, fallbackTrip.returnDate),
+        departureDate: fallbackTrip.departureDate,
+        returnDate: fallbackTrip.returnDate,
+        travelers: fallbackTrip.travelers,
+      });
+      setView('planner');
+    }
+
+    try {
+      const data = await getTripStartupState(tripSessionId);
+      const trip = data.tripSession;
+      if (!trip) {
+        if (!fallbackTrip) {
+          throw new Error('Trip session not found.');
+        }
+        return;
+      }
+
+      setStartupState(data);
+      setPlannerTripDetails({
+        origin: trip.origin,
+        dateRange: formatDateRange(trip.departureDate, trip.returnDate),
+        departureDate: trip.departureDate,
+        returnDate: trip.returnDate,
+        travelers: trip.travelers,
+      });
+      if (!fallbackTrip) {
+        setView('planner');
+      }
+    } catch (error) {
+      if (fallbackTrip) {
+        console.warn('Opened trip with fallback data due startup RPC failure:', error);
+        return;
+      }
+      throw error;
+    }
+  }, [currentTrips]);
+
   const refreshCreateTripData = useCallback(async () => {
     const [data, trips, invites] = await Promise.all([
       getMyStartupState().catch((error) => {
@@ -242,6 +304,7 @@ const App: React.FC = () => {
         currentTrips={currentTrips}
         onAcceptInvite={handleAcceptInvite}
         onRejectInvite={handleRejectInvite}
+        onOpenTrip={handleOpenCurrentTrip}
         onTripCreated={handleTripCreated}
         onSignOut={handleSignOut}
       />
