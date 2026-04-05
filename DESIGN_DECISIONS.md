@@ -20,3 +20,6 @@
 
 7. **2026-04-05: Frontend login uses Supabase Auth directly**
    The login page calls Supabase Auth endpoints from the Expo client using the public anon key and then gates app access on a stored session. This keeps MVP auth implementation fast and avoids adding a backend auth proxy layer right now.
+
+8. **2026-04-05: Startup hydration is done via single RPC payload**
+   Trip startup data retrieval is consolidated into `get_my_startup_state` and `get_trip_startup_state` so teammates can hydrate trip session, preferences, votes, recommendations, and selected option in one request. This avoids multi-query startup logic and keeps app-open behavior consistent.

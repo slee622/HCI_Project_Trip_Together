@@ -1,0 +1,171 @@
+import { AuthSession, getStoredSession } from './auth';
+
+const SUPABASE_URL = (process.env.EXPO_PUBLIC_SUPABASE_URL || '').trim().replace(/\/+$/, '');
+const SUPABASE_ANON_KEY = (process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || '').trim();
+
+// Please see docs/STARTUP_DATA_RETRIEVAL.md for integration guidance.
+
+
+export interface StartupGroupMember {
+  userId: string;
+  role: 'owner' | 'member';
+  joinedAt: string;
+  handle: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
+
+export interface StartupPreference {
+  userId: string;
+  adventure: number;
+  budget: number;
+  setting: number;
+  weather: number;
+  focus: number;
+  updatedAt: string;
+}
+
+export interface StartupDestination {
+  id: string;
+  city: string;
+  state: string;
+  latitude: number;
+  longitude: number;
+  temperatureScore: number;
+  budgetScore: number;
+  urbanScore: number;
+  natureScore: number;
+  foodScore: number;
+  nightlifeScore: number;
+  relaxationScore: number;
+  shortDescription: string;
+  imageUrl: string | null;
+}
+
+export interface StartupRecommendation {
+  destinationId: string;
+  rank: number;
+  score: number;
+  reason: string;
+  generatedAt: string;
+  updatedAt: string;
+  destination: StartupDestination;
+}
+
+export interface StartupVote {
+  destinationId: string;
+  userId: string;
+  vote: -1 | 1;
+  updatedAt: string;
+}
+
+export interface StartupSelectedOption {
+  destinationId: string;
+  selectedBy: string;
+  selectedAt: string;
+  updatedAt: string;
+}
+
+export interface StartupTripSession {
+  id: string;
+  groupId: string;
+  title: string;
+  origin: string;
+  departureDate: string;
+  returnDate: string;
+  travelers: number;
+  status: 'active' | 'archived';
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StartupGroup {
+  id: string;
+  name: string;
+  createdBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface StartupState {
+  tripSession: StartupTripSession | null;
+  group: StartupGroup | null;
+  groupMembers: StartupGroupMember[];
+  preferences: StartupPreference[];
+  recommendations: StartupRecommendation[];
+  votes: StartupVote[];
+  selectedOption: StartupSelectedOption | null;
+  startupVersion: number;
+}
+
+function assertConfig(): void {
+  if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
+    throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY');
+  }
+}
+
+function getHeaders(session: AuthSession): Record<string, string> {
+  return {
+    apikey: SUPABASE_ANON_KEY,
+    Authorization: `Bearer ${session.accessToken}`,
+    'Content-Type': 'application/json',
+  };
+}
+
+async function fetchRpc<T>(
+  rpcName: string,
+  payload: Record<string, unknown>,
+  session: AuthSession
+): Promise<T> {
+  assertConfig();
+
+  const response = await fetch(`${SUPABASE_URL}/rest/v1/rpc/${rpcName}`, {
+    method: 'POST',
+    headers: getHeaders(session),
+    body: JSON.stringify(payload),
+  });
+
+  const data = await response.json().catch(() => null);
+
+  if (!response.ok) {
+    const message =
+      data?.message || data?.hint || data?.error || `Failed RPC ${rpcName} (${response.status})`;
+    throw new Error(message);
+  }
+
+  return data as T;
+}
+
+/**
+ * Returns startup state for the latest active trip for the signed-in user.
+ * Optionally restricts lookup to one group.
+ */
+export async function getMyStartupState(groupId?: string): Promise<StartupState> {
+  const session = await getStoredSession();
+  if (!session) {
+    throw new Error('No local auth session found. Sign in first.');
+  }
+
+  return fetchRpc<StartupState>(
+    'get_my_startup_state',
+    { p_group_id: groupId ?? null },
+    session
+  );
+}
+
+/**
+ * Returns startup state for a known trip session id.
+ */
+export async function getTripStartupState(tripSessionId: string): Promise<StartupState> {
+  const session = await getStoredSession();
+  if (!session) {
+    throw new Error('No local auth session found. Sign in first.');
+  }
+
+  return fetchRpc<StartupState>(
+    'get_trip_startup_state',
+    { p_trip_session_id: tripSessionId },
+    session
+  );
+}
