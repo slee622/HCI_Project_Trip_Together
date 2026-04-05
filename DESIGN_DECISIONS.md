@@ -41,3 +41,12 @@
 
 14. **2026-04-05: Startup read RPCs run as `security definer`**
     Trip hydration RPCs were switched to definer mode so loading trip state does not depend on direct authenticated table grants. Authorization still stays explicit through existing membership checks inside the functions.
+
+15. **2026-04-05: Planner view hydrates from persisted startup payload**
+    Opening an existing trip now initializes planner preferences, recommendations, selected option, and vote payload from Supabase startup state before any recomputation. This ensures users see persisted trip context immediately when re-entering a trip.
+
+16. **2026-04-05: Planner writes persist through trip-scoped RPCs**
+    Slider preference updates, selected destination changes, and refreshed recommendation lists now write back to Supabase through dedicated RPCs keyed by `trip_session_id`. This keeps the persistence path explicit and aligned with the startup hydration schema.
+
+17. **2026-04-05: Compare list persistence uses dedicated trip destination table**
+    Added compare spots are stored in `trip_compare_destinations` and read per trip via RPC when opening planner. This avoids overloading votes/selection semantics and keeps compare state independent and explicit.

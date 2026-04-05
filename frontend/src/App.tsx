@@ -30,6 +30,7 @@ import {
 type AppView = 'create-trip' | 'planner';
 
 interface PlannerTripDetails {
+  tripSessionId: string;
   origin: string;
   dateRange: string;
   departureDate: string;
@@ -160,6 +161,7 @@ const App: React.FC = () => {
       ...prev.filter((item) => item.id !== trip.tripSessionId),
     ]);
     setPlannerTripDetails({
+      tripSessionId: trip.tripSessionId,
       origin: trip.origin,
       dateRange: trip.dateRange,
       departureDate: trip.departureDate,
@@ -174,6 +176,7 @@ const App: React.FC = () => {
 
     if (fallbackTrip) {
       setPlannerTripDetails({
+        tripSessionId: fallbackTrip.id,
         origin: fallbackTrip.origin,
         dateRange: formatDateRange(fallbackTrip.departureDate, fallbackTrip.returnDate),
         departureDate: fallbackTrip.departureDate,
@@ -195,6 +198,7 @@ const App: React.FC = () => {
 
       setStartupState(data);
       setPlannerTripDetails({
+        tripSessionId: tripSessionId,
         origin: trip.origin,
         dateRange: formatDateRange(trip.departureDate, trip.returnDate),
         departureDate: trip.departureDate,
@@ -315,6 +319,9 @@ const App: React.FC = () => {
     <TripPlannerScreen
       onSignOut={handleSignOut}
       onBack={() => setView('create-trip')}
+      tripSessionId={plannerTripDetails?.tripSessionId || startupState?.tripSession?.id}
+      startupState={startupState}
+      currentUserId={session.user.id}
       tripDetails={plannerTripDetails || undefined}
     />
   );

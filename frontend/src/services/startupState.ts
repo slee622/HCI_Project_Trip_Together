@@ -66,6 +66,27 @@ export interface StartupSelectedOption {
   updatedAt: string;
 }
 
+interface StartupCompareDestination {
+  id: string;
+  city: string;
+  state: string;
+  shortDescription: string;
+}
+
+interface StartupCompareOptionRow {
+  destination_id: string;
+  added_by: string;
+  added_at: string;
+  destination: StartupCompareDestination;
+}
+
+export interface StartupCompareOption {
+  destinationId: string;
+  addedBy: string;
+  addedAt: string;
+  destination: StartupCompareDestination;
+}
+
 export interface StartupTripSession {
   id: string;
   groupId: string;
@@ -164,6 +185,7 @@ export interface StartupState {
   recommendations: StartupRecommendation[];
   votes: StartupVote[];
   selectedOption: StartupSelectedOption | null;
+  compareOptions?: StartupCompareOption[];
   startupVersion: number;
 }
 
@@ -330,4 +352,26 @@ export async function rejectGroupInvite(inviteCode: string): Promise<string> {
     { p_invite_code: inviteCode },
     session
   );
+}
+
+export async function listTripCompareDestinations(
+  tripSessionId: string
+): Promise<StartupCompareOption[]> {
+  const session = await getStoredSession();
+  if (!session) {
+    throw new Error('No local auth session found. Sign in first.');
+  }
+
+  const rows = await fetchRpc<StartupCompareOptionRow[]>(
+    'list_trip_compare_destinations',
+    { p_trip_session_id: tripSessionId },
+    session
+  );
+
+  return (rows || []).map((row) => ({
+    destinationId: row.destination_id,
+    addedBy: row.added_by,
+    addedAt: row.added_at,
+    destination: row.destination,
+  }));
 }
