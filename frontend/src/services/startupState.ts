@@ -114,6 +114,48 @@ export interface MyTripSummary {
   updatedAt: string;
 }
 
+interface PendingInviteRow {
+  invite_code: string;
+  group_id: string;
+  group_name: string;
+  invited_email: string | null;
+  invited_by_user_id: string;
+  invited_by_display_name: string;
+  invited_by_handle: string;
+  created_at: string;
+  expires_at: string | null;
+  trip_session_id: string | null;
+  trip_title: string | null;
+  trip_origin: string | null;
+  trip_departure_date: string | null;
+  trip_return_date: string | null;
+  trip_travelers: number | null;
+  trip_status: 'active' | 'archived' | null;
+}
+
+export interface PendingGroupInviteTrip {
+  tripSessionId: string;
+  title: string;
+  origin: string;
+  departureDate: string;
+  returnDate: string;
+  travelers: number;
+  status: 'active' | 'archived';
+}
+
+export interface PendingGroupInvite {
+  inviteCode: string;
+  groupId: string;
+  groupName: string;
+  invitedEmail: string | null;
+  invitedByUserId: string;
+  invitedByDisplayName: string;
+  invitedByHandle: string;
+  createdAt: string;
+  expiresAt: string | null;
+  trip: PendingGroupInviteTrip | null;
+}
+
 export interface StartupState {
   tripSession: StartupTripSession | null;
   group: StartupGroup | null;
@@ -223,4 +265,69 @@ export async function listMyTripSessions(limit = 10): Promise<MyTripSummary[]> {
     status: row.status,
     updatedAt: row.updated_at,
   }));
+}
+
+/**
+ * Returns pending group invites for the signed-in user.
+ */
+export async function listMyPendingGroupInvites(limit = 10): Promise<PendingGroupInvite[]> {
+  const session = await getStoredSession();
+  if (!session) {
+    throw new Error('No local auth session found. Sign in first.');
+  }
+
+  const rows = await fetchRpc<PendingInviteRow[]>(
+    'list_my_pending_group_invites',
+    { p_limit: limit },
+    session
+  );
+
+  return (rows || []).map((row) => ({
+    inviteCode: row.invite_code,
+    groupId: row.group_id,
+    groupName: row.group_name,
+    invitedEmail: row.invited_email,
+    invitedByUserId: row.invited_by_user_id,
+    invitedByDisplayName: row.invited_by_display_name,
+    invitedByHandle: row.invited_by_handle,
+    createdAt: row.created_at,
+    expiresAt: row.expires_at,
+    trip: row.trip_session_id
+      ? {
+          tripSessionId: row.trip_session_id,
+          title: row.trip_title || 'Trip',
+          origin: row.trip_origin || 'Unknown',
+          departureDate: row.trip_departure_date || '',
+          returnDate: row.trip_return_date || '',
+          travelers: row.trip_travelers || 1,
+          status: row.trip_status || 'active',
+        }
+      : null,
+  }));
+}
+
+export async function acceptGroupInvite(inviteCode: string): Promise<string> {
+  const session = await getStoredSession();
+  if (!session) {
+    throw new Error('No local auth session found. Sign in first.');
+  }
+
+  return fetchRpc<string>(
+    'accept_group_invite',
+    { p_invite_code: inviteCode },
+    session
+  );
+}
+
+export async function rejectGroupInvite(inviteCode: string): Promise<string> {
+  const session = await getStoredSession();
+  if (!session) {
+    throw new Error('No local auth session found. Sign in first.');
+  }
+
+  return fetchRpc<string>(
+    'reject_group_invite',
+    { p_invite_code: inviteCode },
+    session
+  );
 }

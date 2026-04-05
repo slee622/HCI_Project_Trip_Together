@@ -15,7 +15,16 @@ import {
   getStoredSession,
   signOut,
 } from './services/auth';
-import { getMyStartupState, listMyTripSessions, MyTripSummary, StartupState } from './services/startupState';
+import {
+  acceptGroupInvite,
+  getMyStartupState,
+  listMyPendingGroupInvites,
+  listMyTripSessions,
+  MyTripSummary,
+  PendingGroupInvite,
+  rejectGroupInvite,
+  StartupState,
+} from './services/startupState';
 
 type AppView = 'create-trip' | 'planner';
 
@@ -34,6 +43,7 @@ const App: React.FC = () => {
   const [view, setView] = useState<AppView>('create-trip');
   const [startupState, setStartupState] = useState<StartupState | null>(null);
   const [currentTrips, setCurrentTrips] = useState<MyTripSummary[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<PendingGroupInvite[]>([]);
   const [plannerTripDetails, setPlannerTripDetails] = useState<PlannerTripDetails | null>(null);
 
   useEffect(() => {
@@ -71,6 +81,7 @@ const App: React.FC = () => {
         if (mounted) {
           setStartupState(null);
           setCurrentTrips([]);
+          setPendingInvites([]);
           setLoadingStartup(false);
           setView('create-trip');
         }
@@ -80,7 +91,7 @@ const App: React.FC = () => {
       setLoadingStartup(true);
 
       try {
-        const [data, trips] = await Promise.all([
+        const [data, trips, invites] = await Promise.all([
           getMyStartupState().catch((error) => {
             console.warn('Failed to load startup state:', error);
             return null;
@@ -89,10 +100,15 @@ const App: React.FC = () => {
             console.warn('Failed to load current trips:', error);
             return [];
           }),
+          listMyPendingGroupInvites().catch((error) => {
+            console.warn('Failed to load pending invites:', error);
+            return [];
+          }),
         ]);
         if (mounted) {
           setStartupState(data);
           setCurrentTrips(trips);
+          setPendingInvites(invites);
         }
       } finally {
         if (mounted) {
@@ -135,6 +151,36 @@ const App: React.FC = () => {
     setView('planner');
   }, []);
 
+  const refreshCreateTripData = useCallback(async () => {
+    const [data, trips, invites] = await Promise.all([
+      getMyStartupState().catch((error) => {
+        console.warn('Failed to refresh startup state:', error);
+        return null;
+      }),
+      listMyTripSessions().catch((error) => {
+        console.warn('Failed to refresh current trips:', error);
+        return [];
+      }),
+      listMyPendingGroupInvites().catch((error) => {
+        console.warn('Failed to refresh pending invites:', error);
+        return [];
+      }),
+    ]);
+    setStartupState(data);
+    setCurrentTrips(trips);
+    setPendingInvites(invites);
+  }, []);
+
+  const handleAcceptInvite = useCallback(async (inviteCode: string) => {
+    await acceptGroupInvite(inviteCode);
+    await refreshCreateTripData();
+  }, [refreshCreateTripData]);
+
+  const handleRejectInvite = useCallback(async (inviteCode: string) => {
+    await rejectGroupInvite(inviteCode);
+    await refreshCreateTripData();
+  }, [refreshCreateTripData]);
+
   const handleSignOut = useCallback(async () => {
     if (!session) return;
 
@@ -148,6 +194,7 @@ const App: React.FC = () => {
       setPlannerTripDetails(null);
       setStartupState(null);
       setCurrentTrips([]);
+      setPendingInvites([]);
       setView('create-trip');
     }
   }, [session]);
@@ -191,7 +238,10 @@ const App: React.FC = () => {
     return (
       <CreateTripScreen
         startupState={startupState}
+        pendingInvites={pendingInvites}
         currentTrips={currentTrips}
+        onAcceptInvite={handleAcceptInvite}
+        onRejectInvite={handleRejectInvite}
         onTripCreated={handleTripCreated}
         onSignOut={handleSignOut}
       />

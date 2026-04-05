@@ -35,3 +35,6 @@
 
 12. **2026-04-05: Current trip list uses dedicated membership-scoped RPC**
     The homepage now calls `list_my_trip_sessions` and renders those results below the create CTA. This keeps retrieval simple for teammates and avoids relying on direct client access patterns for `trip_sessions`.
+
+13. **2026-04-05: Invite inbox is email-scoped with explicit accept/reject actions**
+    Pending invites are surfaced via `list_my_pending_group_invites`, showing inviter identity and latest trip details for the group. Accept/reject actions are handled through RPCs so non-members can act on their invite without broad table read/write privileges.

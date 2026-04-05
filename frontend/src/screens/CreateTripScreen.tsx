@@ -3,6 +3,7 @@ import {
   ActivityIndicator,
   Platform,
   Pressable,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
@@ -10,7 +11,7 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { MyTripSummary, StartupState } from '../services/startupState';
+import { MyTripSummary, PendingGroupInvite, StartupState } from '../services/startupState';
 import { createTripWithGroup } from '../services/tripSetup';
 
 export interface CreatedTripDetails {
@@ -27,7 +28,10 @@ export interface CreatedTripDetails {
 
 interface CreateTripScreenProps {
   startupState?: StartupState | null;
+  pendingInvites?: PendingGroupInvite[];
   currentTrips?: MyTripSummary[];
+  onAcceptInvite: (inviteCode: string) => Promise<void>;
+  onRejectInvite: (inviteCode: string) => Promise<void>;
   onTripCreated: (trip: CreatedTripDetails) => void;
   onSignOut: () => void;
 }
@@ -104,7 +108,10 @@ const DateInput: React.FC<{
 
 export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
   startupState,
+  pendingInvites = [],
   currentTrips = [],
+  onAcceptInvite,
+  onRejectInvite,
   onTripCreated,
   onSignOut,
 }) => {
@@ -121,6 +128,8 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
   const [inviteEmails, setInviteEmails] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [inviteActionCode, setInviteActionCode] = useState<string | null>(null);
+  const [inviteActionError, setInviteActionError] = useState<string | null>(null);
 
   const existingMemberBadges = useMemo<TravelerBadge[]>(() => {
     const members = startupState?.groupMembers || [];
@@ -142,6 +151,13 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
   const travelersCount = Math.max(1, existingMemberBadges.length || 1) + inviteEmails.length;
   const dateRangeLabel = formatDateRange(departureDate, returnDate);
   const canSubmit = Boolean(origin.trim() && departureDate && returnDate && returnDate > departureDate);
+
+  const formatInviteExpiry = (expiresAt: string | null): string => {
+    if (!expiresAt) return '';
+    const value = new Date(expiresAt);
+    if (Number.isNaN(value.getTime())) return '';
+    return `Expires ${value.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
+  };
 
   const handleAddInvite = () => {
     const normalized = inviteEmail.trim().toLowerCase();
@@ -198,6 +214,34 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
     }
   };
 
+  const handleAcceptInvitePress = async (inviteCode: string) => {
+    if (inviteActionCode) return;
+    setInviteActionCode(inviteCode);
+    setInviteActionError(null);
+    try {
+      await onAcceptInvite(inviteCode);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to accept invite.';
+      setInviteActionError(message);
+    } finally {
+      setInviteActionCode(null);
+    }
+  };
+
+  const handleRejectInvitePress = async (inviteCode: string) => {
+    if (inviteActionCode) return;
+    setInviteActionCode(inviteCode);
+    setInviteActionError(null);
+    try {
+      await onRejectInvite(inviteCode);
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Failed to reject invite.';
+      setInviteActionError(message);
+    } finally {
+      setInviteActionCode(null);
+    }
+  };
+
   return (
     <View style={styles.page}>
       <View style={styles.circleTopLeft} />
@@ -209,17 +253,23 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
         </TouchableOpacity>
       </View>
 
-      <View style={styles.content}>
-        <View style={styles.planeRow}>
-          <Text style={[styles.planeIcon, isMobile ? styles.planeIconMobile : null]}>✈</Text>
-        </View>
-        <Text style={[styles.title, isCompact ? styles.titleCompact : null, isMobile ? styles.titleMobile : null]}>
-          PLAN YOUR PERFECT TRIP
-        </Text>
-        <View style={styles.titleUnderline} />
-        <Text style={[styles.subtitle, isCompact ? styles.subtitleCompact : null]}>
-          GROUP TRAVEL PLANNER · VOTE · COMPARE · EXPLORE
-        </Text>
+      <ScrollView
+        style={styles.scrollArea}
+        contentContainerStyle={styles.scrollContent}
+        keyboardShouldPersistTaps="handled"
+        showsVerticalScrollIndicator={false}
+      >
+        <View style={styles.content}>
+          <View style={styles.planeRow}>
+            <Text style={[styles.planeIcon, isMobile ? styles.planeIconMobile : null]}>✈</Text>
+          </View>
+          <Text style={[styles.title, isCompact ? styles.titleCompact : null, isMobile ? styles.titleMobile : null]}>
+            PLAN YOUR PERFECT TRIP
+          </Text>
+          <View style={styles.titleUnderline} />
+          <Text style={[styles.subtitle, isCompact ? styles.subtitleCompact : null]}>
+            GROUP TRAVEL PLANNER · VOTE · COMPARE · EXPLORE
+          </Text>
 
         <View style={styles.fieldsRow}>
           <View style={[styles.fieldCard, origin.trim() ? styles.completedCard : null]}>
@@ -321,6 +371,73 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
           )}
         </TouchableOpacity>
 
+        <View style={styles.pendingInvitesSection}>
+          <View style={styles.pendingInvitesHeaderRow}>
+            <Text style={styles.pendingInvitesTitle}>INVITATIONS</Text>
+            <Text style={styles.pendingInvitesCount}>{pendingInvites.length}</Text>
+          </View>
+
+          {pendingInvites.length === 0 ? (
+            <Text style={styles.emptyTripsText}>No pending invites right now.</Text>
+          ) : (
+            <View style={styles.pendingInvitesGrid}>
+              {pendingInvites.slice(0, 6).map((invite) => {
+                const inviter = invite.invitedByDisplayName || invite.invitedByHandle || 'A teammate';
+                const inviteTrip = invite.trip;
+                const actionLoading = inviteActionCode === invite.inviteCode;
+                return (
+                  <View key={invite.inviteCode} style={styles.pendingInviteCard}>
+                    <Text style={styles.pendingInviteInviter}>
+                      Invited by {inviter}
+                    </Text>
+                    <Text style={styles.pendingInviteGroup} numberOfLines={1}>
+                      {invite.groupName}
+                    </Text>
+                    {inviteTrip ? (
+                      <>
+                        <Text style={styles.pendingInviteMeta} numberOfLines={1}>
+                          {inviteTrip.title}
+                        </Text>
+                        <Text style={styles.pendingInviteMeta}>
+                          {inviteTrip.origin} · {formatDateRange(normalizeDate(inviteTrip.departureDate), normalizeDate(inviteTrip.returnDate))}
+                        </Text>
+                        <Text style={styles.pendingInviteMeta}>
+                          Travelers: {inviteTrip.travelers}
+                        </Text>
+                      </>
+                    ) : (
+                      <Text style={styles.pendingInviteMeta}>Trip details pending</Text>
+                    )}
+                    {invite.expiresAt ? (
+                      <Text style={styles.pendingInviteExpiry}>{formatInviteExpiry(invite.expiresAt)}</Text>
+                    ) : null}
+                    <View style={styles.pendingInviteActionsRow}>
+                      <TouchableOpacity
+                        style={[styles.pendingInviteAcceptButton, actionLoading ? styles.pendingInviteButtonDisabled : null]}
+                        onPress={() => handleAcceptInvitePress(invite.inviteCode)}
+                        disabled={actionLoading}
+                      >
+                        <Text style={styles.pendingInviteAcceptText}>
+                          {actionLoading ? 'Working...' : 'Accept'}
+                        </Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity
+                        style={[styles.pendingInviteRejectButton, actionLoading ? styles.pendingInviteButtonDisabled : null]}
+                        onPress={() => handleRejectInvitePress(invite.inviteCode)}
+                        disabled={actionLoading}
+                      >
+                        <Text style={styles.pendingInviteRejectText}>Reject</Text>
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                );
+              })}
+            </View>
+          )}
+        </View>
+
+        {inviteActionError ? <Text style={styles.errorText}>{inviteActionError}</Text> : null}
+
         <View style={styles.currentTripsSection}>
           <View style={styles.currentTripsHeaderRow}>
             <Text style={styles.currentTripsTitle}>CURRENT TRIPS</Text>
@@ -349,7 +466,8 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
             </View>
           )}
         </View>
-      </View>
+        </View>
+      </ScrollView>
     </View>
   );
 };
@@ -382,6 +500,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: 24,
     paddingTop: 18,
     alignItems: 'flex-end',
+    zIndex: 1,
+  },
+  scrollArea: {
+    flex: 1,
+    width: '100%',
+  },
+  scrollContent: {
+    paddingBottom: 28,
   },
   signOutButton: {
     borderWidth: 1,
@@ -397,7 +523,7 @@ const styles = StyleSheet.create({
     fontWeight: '700',
   },
   content: {
-    flex: 1,
+    width: '100%',
     alignItems: 'center',
     paddingHorizontal: 24,
     paddingTop: 20,
@@ -659,6 +785,101 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
     letterSpacing: 0.4,
+  },
+  pendingInvitesSection: {
+    marginTop: 24,
+    width: '100%',
+    maxWidth: 1120,
+    borderWidth: 1,
+    borderColor: '#D4DBE6',
+    borderRadius: 16,
+    backgroundColor: '#FFF8EE',
+    padding: 16,
+  },
+  pendingInvitesHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  pendingInvitesTitle: {
+    color: '#7A3E00',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  pendingInvitesCount: {
+    color: '#8B5E34',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  pendingInvitesGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  pendingInviteCard: {
+    flexGrow: 1,
+    flexBasis: 280,
+    borderWidth: 1,
+    borderColor: '#F0D7B6',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    padding: 12,
+    gap: 4,
+  },
+  pendingInviteInviter: {
+    color: '#334155',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  pendingInviteGroup: {
+    color: '#0F172A',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  pendingInviteMeta: {
+    color: '#42546D',
+    fontSize: 13,
+    fontWeight: '600',
+  },
+  pendingInviteExpiry: {
+    marginTop: 3,
+    color: '#B45309',
+    fontSize: 12,
+    fontWeight: '700',
+  },
+  pendingInviteActionsRow: {
+    marginTop: 10,
+    flexDirection: 'row',
+    gap: 8,
+  },
+  pendingInviteAcceptButton: {
+    flex: 1,
+    borderRadius: 10,
+    backgroundColor: '#16A34A',
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  pendingInviteRejectButton: {
+    flex: 1,
+    borderRadius: 10,
+    backgroundColor: '#E2E8F0',
+    paddingVertical: 10,
+    alignItems: 'center',
+  },
+  pendingInviteAcceptText: {
+    color: '#FFFFFF',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  pendingInviteRejectText: {
+    color: '#334155',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  pendingInviteButtonDisabled: {
+    opacity: 0.6,
   },
   currentTripsSection: {
     marginTop: 28,
