@@ -88,6 +88,32 @@ export interface StartupGroup {
   updatedAt: string;
 }
 
+interface MyTripSummaryRow {
+  id: string;
+  group_id: string;
+  group_name: string;
+  title: string;
+  origin: string;
+  departure_date: string;
+  return_date: string;
+  travelers: number;
+  status: 'active' | 'archived';
+  updated_at: string;
+}
+
+export interface MyTripSummary {
+  id: string;
+  groupId: string;
+  groupName: string;
+  title: string;
+  origin: string;
+  departureDate: string;
+  returnDate: string;
+  travelers: number;
+  status: 'active' | 'archived';
+  updatedAt: string;
+}
+
 export interface StartupState {
   tripSession: StartupTripSession | null;
   group: StartupGroup | null;
@@ -168,4 +194,33 @@ export async function getTripStartupState(tripSessionId: string): Promise<Startu
     { p_trip_session_id: tripSessionId },
     session
   );
+}
+
+/**
+ * Returns most recently updated trips for the signed-in user.
+ */
+export async function listMyTripSessions(limit = 10): Promise<MyTripSummary[]> {
+  const session = await getStoredSession();
+  if (!session) {
+    throw new Error('No local auth session found. Sign in first.');
+  }
+
+  const rows = await fetchRpc<MyTripSummaryRow[]>(
+    'list_my_trip_sessions',
+    { p_limit: limit },
+    session
+  );
+
+  return (rows || []).map((row) => ({
+    id: row.id,
+    groupId: row.group_id,
+    groupName: row.group_name,
+    title: row.title,
+    origin: row.origin,
+    departureDate: row.departure_date,
+    returnDate: row.return_date,
+    travelers: row.travelers,
+    status: row.status,
+    updatedAt: row.updated_at,
+  }));
 }

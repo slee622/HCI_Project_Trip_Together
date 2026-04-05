@@ -15,7 +15,7 @@ import {
   getStoredSession,
   signOut,
 } from './services/auth';
-import { getMyStartupState, StartupState } from './services/startupState';
+import { getMyStartupState, listMyTripSessions, MyTripSummary, StartupState } from './services/startupState';
 
 type AppView = 'create-trip' | 'planner';
 
@@ -33,6 +33,7 @@ const App: React.FC = () => {
   const [loadingStartup, setLoadingStartup] = useState(false);
   const [view, setView] = useState<AppView>('create-trip');
   const [startupState, setStartupState] = useState<StartupState | null>(null);
+  const [currentTrips, setCurrentTrips] = useState<MyTripSummary[]>([]);
   const [plannerTripDetails, setPlannerTripDetails] = useState<PlannerTripDetails | null>(null);
 
   useEffect(() => {
@@ -69,6 +70,7 @@ const App: React.FC = () => {
       if (!session) {
         if (mounted) {
           setStartupState(null);
+          setCurrentTrips([]);
           setLoadingStartup(false);
           setView('create-trip');
         }
@@ -78,14 +80,19 @@ const App: React.FC = () => {
       setLoadingStartup(true);
 
       try {
-        const data = await getMyStartupState();
+        const [data, trips] = await Promise.all([
+          getMyStartupState().catch((error) => {
+            console.warn('Failed to load startup state:', error);
+            return null;
+          }),
+          listMyTripSessions().catch((error) => {
+            console.warn('Failed to load current trips:', error);
+            return [];
+          }),
+        ]);
         if (mounted) {
           setStartupState(data);
-        }
-      } catch (error) {
-        console.warn('Failed to load startup state:', error);
-        if (mounted) {
-          setStartupState(null);
+          setCurrentTrips(trips);
         }
       } finally {
         if (mounted) {
@@ -103,6 +110,21 @@ const App: React.FC = () => {
   }, [session]);
 
   const handleTripCreated = useCallback((trip: CreatedTripDetails) => {
+    setCurrentTrips((prev) => [
+      {
+        id: trip.tripSessionId,
+        groupId: trip.groupId,
+        groupName: trip.groupName,
+        title: trip.title,
+        origin: trip.origin,
+        departureDate: trip.departureDate,
+        returnDate: trip.returnDate,
+        travelers: trip.travelers,
+        status: 'active',
+        updatedAt: new Date().toISOString(),
+      },
+      ...prev.filter((item) => item.id !== trip.tripSessionId),
+    ]);
     setPlannerTripDetails({
       origin: trip.origin,
       dateRange: trip.dateRange,
@@ -125,6 +147,7 @@ const App: React.FC = () => {
       setSession(null);
       setPlannerTripDetails(null);
       setStartupState(null);
+      setCurrentTrips([]);
       setView('create-trip');
     }
   }, [session]);
@@ -168,6 +191,7 @@ const App: React.FC = () => {
     return (
       <CreateTripScreen
         startupState={startupState}
+        currentTrips={currentTrips}
         onTripCreated={handleTripCreated}
         onSignOut={handleSignOut}
       />

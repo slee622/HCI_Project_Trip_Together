@@ -10,12 +10,14 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native';
-import { StartupState } from '../services/startupState';
+import { MyTripSummary, StartupState } from '../services/startupState';
 import { createTripWithGroup } from '../services/tripSetup';
 
 export interface CreatedTripDetails {
   tripSessionId: string;
   groupId: string;
+  groupName: string;
+  title: string;
   origin: string;
   departureDate: string;
   returnDate: string;
@@ -25,6 +27,7 @@ export interface CreatedTripDetails {
 
 interface CreateTripScreenProps {
   startupState?: StartupState | null;
+  currentTrips?: MyTripSummary[];
   onTripCreated: (trip: CreatedTripDetails) => void;
   onSignOut: () => void;
 }
@@ -101,6 +104,7 @@ const DateInput: React.FC<{
 
 export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
   startupState,
+  currentTrips = [],
   onTripCreated,
   onSignOut,
 }) => {
@@ -163,19 +167,23 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
 
     try {
       const normalizedOrigin = origin.trim();
+      const groupName = `${normalizedOrigin} Travel Group`;
+      const tripTitle = `${normalizedOrigin} Getaway`;
       const result = await createTripWithGroup({
         origin: normalizedOrigin,
         departureDate,
         returnDate,
         travelers: travelersCount,
-        groupName: `${normalizedOrigin} Travel Group`,
-        tripTitle: `${normalizedOrigin} Getaway`,
+        groupName,
+        tripTitle,
         inviteEmails,
       });
 
       onTripCreated({
         tripSessionId: result.tripSessionId,
         groupId: result.groupId,
+        groupName,
+        title: tripTitle,
         origin: normalizedOrigin,
         departureDate,
         returnDate,
@@ -312,6 +320,35 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
             <Text style={styles.exploreButtonText}>EXPLORE DESTINATIONS</Text>
           )}
         </TouchableOpacity>
+
+        <View style={styles.currentTripsSection}>
+          <View style={styles.currentTripsHeaderRow}>
+            <Text style={styles.currentTripsTitle}>CURRENT TRIPS</Text>
+            <Text style={styles.currentTripsCount}>{currentTrips.length}</Text>
+          </View>
+
+          {currentTrips.length === 0 ? (
+            <Text style={styles.emptyTripsText}>No trips yet. Create your first one above.</Text>
+          ) : (
+            <View style={styles.currentTripsGrid}>
+              {currentTrips.slice(0, 6).map((trip) => (
+                <View key={trip.id} style={styles.tripCard}>
+                  <View style={styles.tripCardTopRow}>
+                    <Text style={styles.tripCardTitle} numberOfLines={1}>
+                      {trip.title}
+                    </Text>
+                    <View style={[styles.tripStatusPill, trip.status === 'active' ? styles.tripStatusActive : styles.tripStatusArchived]}>
+                      <Text style={styles.tripStatusText}>{trip.status.toUpperCase()}</Text>
+                    </View>
+                  </View>
+                  <Text style={styles.tripCardMeta} numberOfLines={1}>{trip.groupName}</Text>
+                  <Text style={styles.tripCardMeta}>{trip.origin} · {formatDateRange(normalizeDate(trip.departureDate), normalizeDate(trip.returnDate))}</Text>
+                  <Text style={styles.tripCardMeta}>Travelers: {trip.travelers}</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
       </View>
     </View>
   );
@@ -622,6 +659,88 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '800',
     letterSpacing: 0.4,
+  },
+  currentTripsSection: {
+    marginTop: 28,
+    width: '100%',
+    maxWidth: 1120,
+    borderWidth: 1,
+    borderColor: '#D4DBE6',
+    borderRadius: 16,
+    backgroundColor: '#F8FBFF',
+    padding: 16,
+    marginBottom: 18,
+  },
+  currentTripsHeaderRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 12,
+  },
+  currentTripsTitle: {
+    color: '#274060',
+    fontSize: 14,
+    fontWeight: '800',
+    letterSpacing: 0.8,
+  },
+  currentTripsCount: {
+    color: '#5F6F86',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  emptyTripsText: {
+    color: '#6B7B92',
+    fontSize: 14,
+    fontWeight: '500',
+  },
+  currentTripsGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 12,
+  },
+  tripCard: {
+    flexGrow: 1,
+    flexBasis: 280,
+    borderWidth: 1,
+    borderColor: '#CFD8E5',
+    borderRadius: 12,
+    backgroundColor: '#FFFFFF',
+    padding: 12,
+    gap: 4,
+  },
+  tripCardTopRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    gap: 8,
+  },
+  tripCardTitle: {
+    flex: 1,
+    color: '#12223D',
+    fontSize: 16,
+    fontWeight: '800',
+  },
+  tripStatusPill: {
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  tripStatusActive: {
+    backgroundColor: '#E7F9EF',
+  },
+  tripStatusArchived: {
+    backgroundColor: '#EEF2F7',
+  },
+  tripStatusText: {
+    color: '#2F3A4D',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 0.3,
+  },
+  tripCardMeta: {
+    color: '#4C5D76',
+    fontSize: 13,
+    fontWeight: '600',
   },
 });
 

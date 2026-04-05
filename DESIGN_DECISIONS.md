@@ -32,3 +32,6 @@
 
 11. **2026-04-05: Trip creation uses RPC instead of direct table insert**
     Homepage trip creation now calls `create_trip_session` so client flow does not depend on direct `trip_sessions` table privileges. This keeps writes consistent with the existing RPC-based group/invite approach and avoids permission errors.
+
+12. **2026-04-05: Current trip list uses dedicated membership-scoped RPC**
+    The homepage now calls `list_my_trip_sessions` and renders those results below the create CTA. This keeps retrieval simple for teammates and avoids relying on direct client access patterns for `trip_sessions`.
