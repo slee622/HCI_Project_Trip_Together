@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Trip Together",
+    "slug": "trip-together",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "resizeMode": "contain",
+      "backgroundColor": "#4A90D9"
+    },
+    "assetBundlePatterns": ["**/*"],
+    "ios": {
+      "supportsTablet": true
+    },
+    "android": {
+      "adaptiveIcon": {
+        "backgroundColor": "#4A90D9"
+      }
+    },
+    "web": {
+      "bundler": "metro"
+    }
+  }
+}
