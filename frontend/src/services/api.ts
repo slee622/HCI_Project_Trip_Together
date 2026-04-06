@@ -188,3 +188,106 @@ export async function getDestinations(): Promise<DestinationOption[]> {
     return parse(fallbackResponse);
   }
 }
+
+// ============================================
+// TRAVEL SEARCH API (Flights & Hotels)
+// ============================================
+
+export interface FlightOption {
+  price: number;
+  airline: string;
+  departureDate: string;
+  returnDate: string;
+  departureTime?: string;
+  returnTime?: string;
+  stops?: number;
+}
+
+export interface HotelOption {
+  name: string;
+  nightlyRate: number;
+  rating: number;
+  amenities?: string[];
+}
+
+export interface TravelSearchResponse {
+  flights: FlightOption[];
+  hotels: HotelOption[];
+  source: 'sky-scrapper' | 'mock';
+}
+
+/**
+ * Search for flights
+ */
+export async function searchFlights(
+  origin: string,
+  destination: string,
+  departureDate: string,
+  returnDate?: string,
+  travelers: number = 1
+): Promise<{ flights: FlightOption[]; source: string }> {
+  return fetchApi('/api/travel/flights', {
+    method: 'POST',
+    body: JSON.stringify({
+      origin,
+      destination,
+      departureDate,
+      returnDate,
+      travelers,
+    }),
+  });
+}
+
+/**
+ * Search for hotels
+ */
+export async function searchHotels(
+  destination: string,
+  checkInDate: string,
+  checkOutDate: string,
+  travelers: number = 2,
+  rooms: number = 1
+): Promise<{ hotels: HotelOption[]; source: string }> {
+  return fetchApi('/api/travel/hotels', {
+    method: 'POST',
+    body: JSON.stringify({
+      destination,
+      checkInDate,
+      checkOutDate,
+      travelers,
+      rooms,
+    }),
+  });
+}
+
+/**
+ * Combined flight and hotel search
+ */
+export async function searchTravel(
+  origin: string,
+  destination: string,
+  departureDate: string,
+  returnDate: string,
+  travelers: number = 1
+): Promise<TravelSearchResponse> {
+  return fetchApi('/api/travel/search', {
+    method: 'POST',
+    body: JSON.stringify({
+      origin,
+      destination,
+      departureDate,
+      returnDate,
+      travelers,
+    }),
+  });
+}
+
+/**
+ * Check if real API is configured
+ */
+export async function getTravelApiStatus(): Promise<{
+  configured: boolean;
+  provider: string;
+}> {
+  return fetchApi('/api/travel/status');
+}

@@ -7,14 +7,23 @@ var __importDefault = (this && this.__importDefault) || function (mod) {
     return (mod && mod.__esModule) ? mod : { "default": mod };
 };
 Object.defineProperty(exports, "__esModule", { value: true });
+// Load environment variables first
+require("dotenv/config");
 const express_1 = __importDefault(require("express"));
 const cors_1 = __importDefault(require("cors"));
 const recommendationRoutes_1 = __importDefault(require("./routes/recommendationRoutes"));
 const tripEstimateRoutes_1 = __importDefault(require("./routes/tripEstimateRoutes"));
+const travelRoutes_1 = __importDefault(require("./routes/travelRoutes"));
+const skyScrapperService_1 = require("./services/skyScrapperService");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3001;
 // Middleware
-app.use((0, cors_1.default)());
+app.use((0, cors_1.default)({
+    origin: true, // Allow all origins in development
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+}));
 app.use(express_1.default.json());
 // Request logging (simple)
 app.use((req, _res, next) => {
@@ -24,6 +33,7 @@ app.use((req, _res, next) => {
 // Routes
 app.use('/api/recommendations', recommendationRoutes_1.default);
 app.use('/api/trip-estimate', tripEstimateRoutes_1.default);
+app.use('/api/travel', travelRoutes_1.default);
 // Health check endpoint
 app.get('/api/health', (_req, res) => {
     res.json({
@@ -52,9 +62,13 @@ app.use((err, _req, res, _next) => {
 // Start server
 app.listen(PORT, () => {
     console.log(`🚀 Trip Together API server running on http://localhost:${PORT}`);
+    console.log(`   Sky Scrapper API: ${(0, skyScrapperService_1.isSkyScrappperConfigured)() ? '✅ Configured' : '⚠️  Not configured (using mock data)'}`);
     console.log(`   - POST /api/recommendations - Get destination recommendations`);
     console.log(`   - POST /api/trip-estimate - Get trip cost estimate`);
     console.log(`   - POST /api/trip-estimate/batch - Get batch cost estimates`);
+    console.log(`   - POST /api/travel/flights - Search flights (Sky Scrapper)`);
+    console.log(`   - POST /api/travel/hotels - Search hotels (Sky Scrapper)`);
+    console.log(`   - POST /api/travel/search - Combined flight + hotel search`);
     console.log(`   - GET /api/health - Health check`);
 });
 exports.default = app;

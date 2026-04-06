@@ -19,9 +19,19 @@ export interface Destination {
     imageUrl?: string | null;
 }
 /**
- * GroupPreferences represents the combined travel preferences for a group
- * TODO: Teammates will integrate this with their group/session system
- * For now, this is passed directly from the frontend
+ * UserPreferences represents the 5 slider dimensions in the UI
+ * These map to destination scores for recommendation matching
+ */
+export interface UserPreferences {
+    adventure: number;
+    budget: number;
+    setting: number;
+    weather: number;
+    focus: number;
+}
+/**
+ * GroupPreferences - the format sent to the recommendation API
+ * Derived from UserPreferences with proper mappings
  */
 export interface GroupPreferences {
     temperature: number;

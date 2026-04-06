@@ -3,10 +3,15 @@
  * Express API for destination recommendations and trip cost estimation
  */
 
+// Load environment variables first
+import 'dotenv/config';
+
 import express from 'express';
 import cors from 'cors';
 import recommendationRoutes from './routes/recommendationRoutes';
 import tripEstimateRoutes from './routes/tripEstimateRoutes';
+import travelRoutes from './routes/travelRoutes';
+import { isSkyScrappperConfigured } from './services/skyScrapperService';
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -29,6 +34,7 @@ app.use((req, _res, next) => {
 // Routes
 app.use('/api/recommendations', recommendationRoutes);
 app.use('/api/trip-estimate', tripEstimateRoutes);
+app.use('/api/travel', travelRoutes);
 
 // Health check endpoint
 app.get('/api/health', (_req, res) => {
@@ -61,9 +67,13 @@ app.use((err: Error, _req: express.Request, res: express.Response, _next: expres
 // Start server
 app.listen(PORT, () => {
   console.log(`🚀 Trip Together API server running on http://localhost:${PORT}`);
+  console.log(`   Sky Scrapper API: ${isSkyScrappperConfigured() ? '✅ Configured' : '⚠️  Not configured (using mock data)'}`);
   console.log(`   - POST /api/recommendations - Get destination recommendations`);
   console.log(`   - POST /api/trip-estimate - Get trip cost estimate`);
   console.log(`   - POST /api/trip-estimate/batch - Get batch cost estimates`);
+  console.log(`   - POST /api/travel/flights - Search flights (Sky Scrapper)`);
+  console.log(`   - POST /api/travel/hotels - Search hotels (Sky Scrapper)`);
+  console.log(`   - POST /api/travel/search - Combined flight + hotel search`);
   console.log(`   - GET /api/health - Health check`);
 });
 

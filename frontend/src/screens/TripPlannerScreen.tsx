@@ -18,6 +18,7 @@ import { Header } from '../components/Header';
 import { PreferencesPanel } from '../components/PreferencesPanel';
 import { ComparePanel } from '../components/ComparePanel';
 import { TripMapView } from '../components/TripMapView';
+import { CompareScreen } from './CompareScreen';
 import {
   listTripCompareDestinations,
   StartupCompareOption,
@@ -137,6 +138,9 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
 
   // Compare destinations
   const [compareList, setCompareList] = useState<CompareDestination[]>([]);
+
+  // Show compare screen
+  const [showCompareScreen, setShowCompareScreen] = useState(false);
 
   // Recommendations from API
   const [recommendations, setRecommendations] = useState<RecommendationWithEstimate[]>(() =>
@@ -293,14 +297,41 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
 
   // Handle compare button click
   const handleCompare = useCallback(() => {
-    console.log('Comparing destinations:', compareList, 'Loaded votes:', votes);
-  }, [compareList, votes]);
+    if (compareList.length >= 2) {
+      setShowCompareScreen(true);
+    }
+  }, [compareList]);
+
+  // Handle vote from compare screen
+  const handleVote = useCallback((destinationId: string) => {
+    console.log('Voted for destination:', destinationId);
+    // TODO: Save vote to backend
+    setShowCompareScreen(false);
+  }, []);
 
   // Check if destination is in compare list
   const isInCompareList = useCallback(
     (id: string) => compareList.some((d) => d.id === id),
     [compareList]
   );
+
+  // Show compare screen if active
+  if (showCompareScreen) {
+    return (
+      <CompareScreen
+        destinations={compareList}
+        tripDetails={{
+          origin: activeTrip.origin,
+          departureDate: activeTrip.departureDate,
+          returnDate: activeTrip.returnDate,
+          travelers: activeTrip.travelers,
+        }}
+        currentUserId={currentUserId}
+        onBack={() => setShowCompareScreen(false)}
+        onVote={handleVote}
+      />
+    );
+  }
 
   return (
     <View style={styles.container}>
@@ -361,13 +392,14 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
   },
   sidebar: {
-    width: 280,
+    width: 350,
     backgroundColor: '#FAFBFC',
     padding: 16,
     borderRightWidth: 1,
     borderRightColor: '#E8E8E8',
   },
   sidebarContent: {
+    width: 300,
     paddingBottom: 16,
   },
   mapContainer: {
