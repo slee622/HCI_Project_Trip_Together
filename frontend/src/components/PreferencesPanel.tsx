@@ -25,7 +25,7 @@ export const PreferencesPanel: React.FC<PreferencesPanelProps> = ({
       <Text style={styles.subtitle}>Move sliders to filter destinations</Text>
       
       {/* Sliders */}
-      <ScrollView style={styles.sliderContainer}>
+      <ScrollView style={styles.sliderContainer} nestedScrollEnabled>
         {SLIDER_CONFIGS.map((config) => (
           <PreferenceSlider
             key={config.key}
