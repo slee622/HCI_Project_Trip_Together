@@ -4,7 +4,7 @@
  */
 
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import { View, StyleSheet } from 'react-native';
+import { View, StyleSheet, ScrollView } from 'react-native';
 import {
   UserPreferences,
   CompareDestination,
@@ -318,16 +318,21 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       <View style={styles.content}>
         {/* Left Sidebar */}
         <View style={styles.sidebar}>
-          <PreferencesPanel
-            preferences={preferences}
-            onPreferenceChange={handlePreferenceChange}
-            disabled={loading}
-          />
-          <ComparePanel
-            destinations={compareList}
-            onCompare={handleCompare}
-            onRemoveDestination={handleRemoveFromCompare}
-          />
+          <ScrollView
+            contentContainerStyle={styles.sidebarContent}
+            showsVerticalScrollIndicator
+          >
+            <PreferencesPanel
+              preferences={preferences}
+              onPreferenceChange={handlePreferenceChange}
+              disabled={loading}
+            />
+            <ComparePanel
+              destinations={compareList}
+              onCompare={handleCompare}
+              onRemoveDestination={handleRemoveFromCompare}
+            />
+          </ScrollView>
         </View>
 
         {/* Map Area */}
@@ -361,6 +366,9 @@ const styles = StyleSheet.create({
     padding: 16,
     borderRightWidth: 1,
     borderRightColor: '#E8E8E8',
+  },
+  sidebarContent: {
+    paddingBottom: 16,
   },
   mapContainer: {
     flex: 1,

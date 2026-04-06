@@ -35,7 +35,7 @@ export const ComparePanel: React.FC<ComparePanelProps> = ({
         <Text style={styles.dropZoneText}>Drag a destination here</Text>
       </View>
       
-      <ScrollView style={styles.destinationList}>
+      <ScrollView style={styles.destinationList} nestedScrollEnabled>
         {destinations.map((dest) => (
           <CompareDestinationCard
             key={dest.id}
