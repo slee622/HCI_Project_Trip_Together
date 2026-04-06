@@ -12,6 +12,14 @@ import {
   RecommendationWithEstimate,
 } from '../types';
 
+export interface DestinationOption {
+  id: string;
+  city: string;
+  state: string;
+  latitude: number;
+  longitude: number;
+}
+
 // API base URL - configure based on environment
 // In Codespaces, we need to use the forwarded port URL
 const getApiBaseUrl = () => {
@@ -153,4 +161,30 @@ export async function checkApiHealth(): Promise<{
   timestamp: string;
 }> {
   return fetchApi('/api/health');
+}
+
+export async function getDestinations(): Promise<DestinationOption[]> {
+  const parse = (response: { destinations: DestinationOption[]; count: number }) => response.destinations;
+
+  try {
+    const response = await fetchApi<{
+      destinations: DestinationOption[];
+      count: number;
+    }>('/api/recommendations/destinations');
+    return parse(response);
+  } catch (error) {
+    const fallbackResponse = await fetchApi<{
+      destinations: DestinationOption[];
+      count: number;
+    }>('/api/destinations');
+
+    if (error instanceof Error) {
+      console.warn(
+        'Primary destinations endpoint failed; used fallback /api/destinations instead:',
+        error.message
+      );
+    }
+
+    return parse(fallbackResponse);
+  }
 }

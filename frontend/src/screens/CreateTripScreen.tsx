@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
   Platform,
@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { MyTripSummary, PendingGroupInvite, StartupState } from '../services/startupState';
 import { createTripWithGroup } from '../services/tripSetup';
+import { DestinationOption, getDestinations } from '../services/api';
 
 export interface CreatedTripDetails {
   tripSessionId: string;
@@ -55,6 +56,10 @@ const WEB_DATE_INPUT_STYLE = {
   color: '#111827',
   boxSizing: 'border-box',
 } as any;
+
+function formatOriginOption(option: DestinationOption): string {
+  return `${option.city}, ${option.state}`;
+}
 
 function normalizeDate(value: string | null | undefined): string {
   if (!value) return '';
@@ -122,6 +127,11 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
   const isMobile = width < 620;
 
   const [origin, setOrigin] = useState('');
+  const [selectedOrigin, setSelectedOrigin] = useState<DestinationOption | null>(null);
+  const [originFocused, setOriginFocused] = useState(false);
+  const [originOptions, setOriginOptions] = useState<DestinationOption[]>([]);
+  const [originOptionsLoading, setOriginOptionsLoading] = useState(false);
+  const [originOptionsError, setOriginOptionsError] = useState<string | null>(null);
   const [departureDate, setDepartureDate] = useState('');
   const [returnDate, setReturnDate] = useState('');
   const [invitePanelOpen, setInvitePanelOpen] = useState(false);
@@ -152,7 +162,57 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
 
   const travelersCount = 1 + inviteEmails.length;
   const dateRangeLabel = formatDateRange(departureDate, returnDate);
-  const canSubmit = Boolean(origin.trim() && departureDate && returnDate && returnDate > departureDate);
+  const hasValidDates = Boolean(departureDate && returnDate && returnDate > departureDate);
+  const canSubmit = Boolean(
+    selectedOrigin &&
+    hasValidDates &&
+    !originOptionsLoading &&
+    originOptions.length > 0
+  );
+
+  const filteredOriginOptions = useMemo(() => {
+    const query = origin.trim().toLowerCase();
+    if (!query) {
+      return originOptions.slice(0, 8);
+    }
+
+    return originOptions
+      .filter((option) => {
+        const label = `${option.city} ${option.state} ${option.id}`.toLowerCase();
+        return label.includes(query);
+      })
+      .slice(0, 8);
+  }, [origin, originOptions]);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const loadOrigins = async () => {
+      setOriginOptionsLoading(true);
+      setOriginOptionsError(null);
+      try {
+        const destinations = await getDestinations();
+        if (mounted) {
+          setOriginOptions(destinations);
+        }
+      } catch (err) {
+        const message = err instanceof Error ? err.message : 'Failed to load destination options.';
+        if (mounted) {
+          setOriginOptionsError(message);
+        }
+      } finally {
+        if (mounted) {
+          setOriginOptionsLoading(false);
+        }
+      }
+    };
+
+    loadOrigins();
+
+    return () => {
+      mounted = false;
+    };
+  }, []);
 
   const formatInviteExpiry = (expiresAt: string | null): string => {
     if (!expiresAt) return '';
@@ -177,16 +237,34 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
     setError(null);
   };
 
+  const handleOriginChange = (value: string) => {
+    setOrigin(value);
+    setSelectedOrigin(null);
+    setError(null);
+  };
+
+  const handleOriginSelect = (option: DestinationOption) => {
+    setSelectedOrigin(option);
+    setOrigin(formatOriginOption(option));
+    setOriginFocused(false);
+    setError(null);
+  };
+
   const handleCreateTrip = async () => {
     if (!canSubmit || loading) return;
+    if (!selectedOrigin) {
+      setError('Select a departure airport/geolocation from the suggestions.');
+      return;
+    }
 
     setLoading(true);
     setError(null);
 
     try {
-      const normalizedOrigin = origin.trim();
-      const groupName = `${normalizedOrigin} Travel Group`;
-      const tripTitle = `${normalizedOrigin} Getaway`;
+      const originLabel = `${selectedOrigin.city}, ${selectedOrigin.state}`;
+      const normalizedOrigin = formatOriginOption(selectedOrigin);
+      const groupName = `${originLabel} Travel Group`;
+      const tripTitle = `${originLabel} Getaway`;
       const result = await createTripWithGroup({
         origin: normalizedOrigin,
         departureDate,
@@ -288,19 +366,45 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
           </Text>
 
         <View style={styles.fieldsRow}>
-          <View style={[styles.fieldCard, origin.trim() ? styles.completedCard : null]}>
+          <View style={[styles.fieldCard, selectedOrigin ? styles.completedCard : null]}>
             <Text style={styles.fieldLabel}>DEPARTURE</Text>
             <TextInput
-              style={[styles.fieldInput, isMobile ? styles.fieldInputMobile : null]}
+              style={[styles.fieldInput, styles.departureFieldInput, isMobile ? styles.departureFieldInputMobile : null]}
               value={origin}
-              onChangeText={setOrigin}
-              placeholder="From?"
-              autoCapitalize="words"
+              onChangeText={handleOriginChange}
+              placeholder="Select Departure Location"
+              autoCapitalize="none"
               autoCorrect={false}
+              onFocus={() => setOriginFocused(true)}
+              onBlur={() => {
+                setTimeout(() => setOriginFocused(false), 120);
+              }}
             />
+            {originOptionsLoading ? (
+              <Text style={styles.originHint}>Loading locations...</Text>
+            ) : null}
+            {originOptionsError ? (
+              <Text style={styles.originError}>Failed to load options: {originOptionsError}</Text>
+            ) : null}
+            {originFocused && filteredOriginOptions.length > 0 ? (
+              <View style={styles.originSuggestions}>
+                {filteredOriginOptions.map((option) => (
+                  <TouchableOpacity
+                    key={option.id}
+                    style={styles.originSuggestionItem}
+                    onPress={() => handleOriginSelect(option)}
+                  >
+                    <Text style={styles.originSuggestionTitle}>{option.city}, {option.state}</Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+            ) : null}
+            {originFocused && origin.trim().length > 0 && filteredOriginOptions.length === 0 ? (
+              <Text style={styles.originHint}>No matching geolocation found.</Text>
+            ) : null}
           </View>
 
-          <View style={[styles.fieldCard, canSubmit ? styles.completedCard : null]}>
+          <View style={[styles.fieldCard, hasValidDates ? styles.completedCard : null]}>
             <Text style={styles.fieldLabel}>TRAVEL DATES</Text>
             <View style={styles.dateInputRow}>
               <DateInput value={departureDate} onChange={setDepartureDate} />
@@ -650,6 +754,45 @@ const styles = StyleSheet.create({
   },
   fieldInputMobile: {
     fontSize: 24,
+  },
+  departureFieldInput: {
+    fontSize: 24,
+    marginTop: 10,
+  },
+  departureFieldInputMobile: {
+    fontSize: 18,
+  },
+  originHint: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#64748B',
+    fontWeight: '500',
+  },
+  originError: {
+    marginTop: 6,
+    fontSize: 12,
+    color: '#C53030',
+    fontWeight: '600',
+  },
+  originSuggestions: {
+    marginTop: 10,
+    borderWidth: 1,
+    borderColor: '#D4DBE6',
+    borderRadius: 10,
+    backgroundColor: '#FFFFFF',
+    maxHeight: 220,
+    overflow: 'hidden',
+  },
+  originSuggestionItem: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: '#EDF2F7',
+  },
+  originSuggestionTitle: {
+    fontSize: 14,
+    color: '#111827',
+    fontWeight: '700',
   },
   dateInputRow: {
     marginTop: 12,
