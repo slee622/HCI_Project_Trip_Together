@@ -12,6 +12,7 @@ interface HeaderProps {
   users?: Array<{ id: string; initial: string; color: string }>;
   onBack?: () => void;
   onDone?: () => void;
+  doneLabel?: string;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -20,6 +21,7 @@ export const Header: React.FC<HeaderProps> = ({
   users = [],
   onBack,
   onDone,
+  doneLabel = 'DONE',
 }) => {
   return (
     <View style={styles.container}>
@@ -64,7 +66,7 @@ export const Header: React.FC<HeaderProps> = ({
         
         {onDone && (
           <TouchableOpacity style={styles.doneButton} onPress={onDone}>
-            <Text style={styles.doneText}>DONE</Text>
+            <Text style={styles.doneText}>{doneLabel}</Text>
           </TouchableOpacity>
         )}
       </View>

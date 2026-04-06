@@ -44,7 +44,10 @@ interface TripMapViewProps {
 }
 
 // Multi-colored pin marker
-const createPinIcon = (colors: string[] = ['#4CAF50', '#FF9800', '#9C27B0']) => {
+const createPinIcon = (
+  colors: string[] = ['#4CAF50', '#FF9800', '#9C27B0'],
+  isSelected: boolean = false
+) => {
   if (!L) return null;
 
   const colorSegments = colors
@@ -68,7 +71,7 @@ const createPinIcon = (colors: string[] = ['#4CAF50', '#FF9800', '#9C27B0']) => 
           height: 24px;
           background: conic-gradient(${colorSegments});
           border-radius: 50%;
-          border: 2px solid white;
+          border: ${isSelected ? '3px solid #2563EB' : '2px solid white'};
           box-shadow: 0 2px 6px rgba(0,0,0,0.3);
           position: absolute;
           top: 0;
@@ -219,6 +222,7 @@ export const TripMapView: React.FC<TripMapViewProps> = ({
   }
 
   const pinIcon = createPinIcon();
+  const selectedPinIcon = createPinIcon(['#2563EB', '#60A5FA', '#BFDBFE'], true);
 
   return (
     <View style={styles.container}>
@@ -238,7 +242,7 @@ export const TripMapView: React.FC<TripMapViewProps> = ({
           <Marker
             key={dest.id}
             position={[dest.latitude, dest.longitude]}
-            icon={pinIcon}
+            icon={dest.id === selectedDestinationId ? selectedPinIcon : pinIcon}
             eventHandlers={{
               click: () => onSelectDestination?.(dest.id),
             }}
