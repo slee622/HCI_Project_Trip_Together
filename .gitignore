@@ -1,3 +1,4 @@
 **/.env*
 docs/MANUAL_ACTIONS*.md
 **/node_modules**
+**/.DS_Store
