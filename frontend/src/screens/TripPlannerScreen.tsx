@@ -10,6 +10,7 @@ import {
   CompareDestination,
   RecommendationWithEstimate,
   DEFAULT_PREFERENCES,
+  SLIDER_CONFIGS,
   SliderDimension,
   userPrefsToGroupPrefs,
 } from '../types';
@@ -18,11 +19,13 @@ import { Header } from '../components/Header';
 import { PreferencesPanel } from '../components/PreferencesPanel';
 import { ComparePanel } from '../components/ComparePanel';
 import { TripMapView } from '../components/TripMapView';
+import { SliderMemberMarker } from '../components/MultiUserSlider';
 import { CompareScreen } from './CompareScreen';
 import {
   listTripCompareDestinations,
   StartupCompareOption,
   StartupGroupMember,
+  StartupPreference,
   StartupRecommendation,
   StartupState,
   StartupVote,
@@ -48,6 +51,7 @@ const DEFAULT_TRIP = {
 
 // Debounce delay for fetching recommendations after preference changes (ms)
 const DEBOUNCE_DELAY = 300;
+const MEMBER_COLOR_PALETTE = ['#4A90D9', '#5C6AC4', '#2D9CDB', '#27AE60', '#E67E22', '#EB5757'];
 
 interface TripPlannerScreenProps {
   onSignOut?: () => void;
@@ -126,12 +130,54 @@ function mapCompareOptionsToCompareDestinations(
 function mapGroupMembersToCompareUsers(
   members: StartupGroupMember[]
 ): Array<{ id: string; initial: string; color: string; preferences?: Record<string, number> }> {
-  const palette = ['#4A90D9', '#5C6AC4', '#2D9CDB', '#27AE60', '#E67E22', '#EB5757'];
   return members.map((member, index) => ({
     id: member.userId,
     initial: (member.displayName || member.handle || 'U').trim().charAt(0).toUpperCase(),
-    color: palette[index % palette.length],
+    color: MEMBER_COLOR_PALETTE[index % MEMBER_COLOR_PALETTE.length],
   }));
+}
+
+function buildPreferenceMarkerByDimension(
+  members: StartupGroupMember[],
+  preferences: StartupPreference[],
+  currentUserId?: string
+): Record<SliderDimension, SliderMemberMarker[]> {
+  const markersByDimension: Record<SliderDimension, SliderMemberMarker[]> = {
+    adventure: [],
+    budget: [],
+    setting: [],
+    weather: [],
+    focus: [],
+  };
+
+  const preferenceByUserId = new Map(preferences.map((preference) => [preference.userId, preference]));
+
+  members.forEach((member, index) => {
+    if (currentUserId && member.userId === currentUserId) {
+      return;
+    }
+
+    const savedPreferences = preferenceByUserId.get(member.userId);
+    if (!savedPreferences) {
+      return;
+    }
+
+    const markerBase = {
+      userId: member.userId,
+      initial: (member.displayName || member.handle || 'U').trim().charAt(0).toUpperCase(),
+      color: MEMBER_COLOR_PALETTE[index % MEMBER_COLOR_PALETTE.length],
+      label: member.displayName || member.handle || 'User',
+    };
+
+    SLIDER_CONFIGS.forEach(({ key }) => {
+      markersByDimension[key].push({
+        ...markerBase,
+        value: clampPreference(savedPreferences[key]),
+      });
+    });
+  });
+
+  return markersByDimension;
 }
 
 export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
@@ -168,6 +214,15 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   const compareUsers = useMemo(
     () => mapGroupMembersToCompareUsers(startupState?.groupMembers || []),
     [startupState?.groupMembers]
+  );
+  const memberPreferenceMarkers = useMemo(
+    () =>
+      buildPreferenceMarkerByDimension(
+        startupState?.groupMembers || [],
+        startupState?.preferences || [],
+        currentUserId
+      ),
+    [startupState?.groupMembers, startupState?.preferences, currentUserId]
   );
 
   // Debounce timer ref
@@ -424,6 +479,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
             <PreferencesPanel
               preferences={preferences}
               onPreferenceChange={handlePreferenceChange}
+              memberPreferenceMarkers={memberPreferenceMarkers}
               disabled={loading}
             />
             <ComparePanel

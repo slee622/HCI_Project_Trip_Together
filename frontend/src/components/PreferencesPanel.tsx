@@ -6,23 +6,25 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView } from 'react-native';
 import { UserPreferences, SLIDER_CONFIGS, SliderDimension } from '../types';
-import { PreferenceSlider } from './MultiUserSlider';
+import { PreferenceSlider, SliderMemberMarker } from './MultiUserSlider';
 
 interface PreferencesPanelProps {
   preferences: UserPreferences;
   onPreferenceChange: (dimension: SliderDimension, value: number) => void;
+  memberPreferenceMarkers?: Partial<Record<SliderDimension, SliderMemberMarker[]>>;
   disabled?: boolean;
 }
 
 export const PreferencesPanel: React.FC<PreferencesPanelProps> = ({
   preferences,
   onPreferenceChange,
+  memberPreferenceMarkers = {},
   disabled = false,
 }) => {
   return (
     <View style={styles.container}>
       <Text style={styles.title}>PREFERENCES</Text>
-      <Text style={styles.subtitle}>Move sliders to filter destinations</Text>
+      <Text style={styles.subtitle}>Move sliders to filter destinations. Colored dots show teammate values.</Text>
       
       {/* Sliders */}
       <ScrollView style={styles.sliderContainer} nestedScrollEnabled>
@@ -34,6 +36,7 @@ export const PreferencesPanel: React.FC<PreferencesPanelProps> = ({
             highLabel={config.highLabel}
             value={preferences[config.key]}
             onChange={(value) => onPreferenceChange(config.key, value)}
+            memberMarkers={memberPreferenceMarkers[config.key] || []}
             disabled={disabled}
           />
         ))}
