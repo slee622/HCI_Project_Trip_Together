@@ -30,7 +30,8 @@ interface UserPreferenceBar {
 }
 
 interface DestinationWithSelections extends CompareDestination {
-  selectedFlight?: FlightOption;
+  selectedDepartureFlight?: FlightOption;
+  selectedReturnFlight?: FlightOption;
   selectedHotel?: HotelOption;
   userBars?: UserPreferenceBar[];
 }
@@ -96,7 +97,8 @@ interface FlightModalProps {
   departureDate: string;
   returnDate?: string;
   travelers: number;
-  onSelect: (flight: FlightOption) => void;
+  flightDirection: 'departure' | 'return';
+  onSelect: (flight: FlightOption, direction: 'departure' | 'return') => void;
   onClose: () => void;
 }
 
@@ -107,6 +109,7 @@ const FlightModal: React.FC<FlightModalProps> = ({
   departureDate,
   returnDate,
   travelers,
+  flightDirection,
   onSelect,
   onClose,
 }) => {
@@ -114,11 +117,16 @@ const FlightModal: React.FC<FlightModalProps> = ({
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Determine search parameters based on flight direction
+  const searchOrigin = flightDirection === 'departure' ? origin : destination?.city || '';
+  const searchDestination = flightDirection === 'departure' ? destination?.city || '' : origin;
+  const searchDate = flightDirection === 'departure' ? departureDate : returnDate || departureDate;
+
   useEffect(() => {
     if (visible && destination) {
       setLoading(true);
       setError(null);
-      searchFlights(origin, destination.city, departureDate, returnDate, travelers)
+      searchFlights(searchOrigin, searchDestination, searchDate, undefined, travelers)
         .then((result) => {
           setFlights(result.flights);
         })
@@ -129,7 +137,7 @@ const FlightModal: React.FC<FlightModalProps> = ({
           setLoading(false);
         });
     }
-  }, [visible, destination, origin, departureDate, returnDate, travelers]);
+  }, [visible, destination, searchOrigin, searchDestination, searchDate, travelers]);
 
   if (!destination) return null;
 
@@ -139,13 +147,19 @@ const FlightModal: React.FC<FlightModalProps> = ({
     return `${stops} stop${stops > 1 ? 's' : ''}`;
   };
 
+  const directionLabel = flightDirection === 'departure' ? 'Outbound' : 'Return';
+  const routeLabel = flightDirection === 'departure' 
+    ? `${origin} → ${destination.city.substring(0, 3).toUpperCase()}`
+    : `${destination.city.substring(0, 3).toUpperCase()} → ${origin}`;
+  const dateLabel = searchDate.split('-').slice(1).join('/');
+
   return (
     <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
       <View style={styles.modalOverlay}>
         <View style={styles.modalContent}>
           <View style={styles.modalHeader}>
             <Text style={styles.modalTitle}>
-              Flights · {origin} → {destination.city.substring(0, 3).toUpperCase()} · {departureDate.split('-').slice(1).join('/')}
+              {directionLabel} Flights · {routeLabel} · {dateLabel}
             </Text>
             <TouchableOpacity onPress={onClose} style={styles.modalClose}>
               <Text style={styles.modalCloseText}>×</Text>
@@ -155,7 +169,7 @@ const FlightModal: React.FC<FlightModalProps> = ({
           {loading ? (
             <View style={styles.modalLoading}>
               <ActivityIndicator size="large" color="#4A90D9" />
-              <Text style={styles.loadingText}>Searching flights...</Text>
+              <Text style={styles.loadingText}>Searching {directionLabel.toLowerCase()} flights...</Text>
             </View>
           ) : error ? (
             <View style={styles.modalError}>
@@ -168,7 +182,7 @@ const FlightModal: React.FC<FlightModalProps> = ({
                   key={index}
                   style={styles.flightItem}
                   onPress={() => {
-                    onSelect(flight);
+                    onSelect(flight, flightDirection);
                     onClose();
                   }}
                 >
@@ -331,7 +345,8 @@ interface DestinationCardProps {
     returnDate: string;
     travelers: number;
   };
-  onViewFlights: () => void;
+  onViewDepartureFlight: () => void;
+  onViewReturnFlight: () => void;
   onViewHotels: () => void;
   onVote: () => void;
   locked?: boolean;
@@ -343,7 +358,8 @@ const DestinationCard: React.FC<DestinationCardProps> = ({
   voterProfiles,
   hasCurrentUserVoted,
   tripDetails,
-  onViewFlights,
+  onViewDepartureFlight,
+  onViewReturnFlight,
   onViewHotels,
   onVote,
   locked = false,
@@ -360,19 +376,29 @@ const DestinationCard: React.FC<DestinationCardProps> = ({
 
   // Calculate total price based on selections
   const calculateTotalPrice = () => {
-    let flightTotal = 0;
+    let departureFlightTotal = 0;
+    let returnFlightTotal = 0;
     let hotelTotal = 0;
     
-    if (destination.selectedFlight) {
-      flightTotal = destination.selectedFlight.price * tripDetails.travelers;
+    if (destination.selectedDepartureFlight) {
+      departureFlightTotal = destination.selectedDepartureFlight.price * tripDetails.travelers;
+    }
+    if (destination.selectedReturnFlight) {
+      returnFlightTotal = destination.selectedReturnFlight.price * tripDetails.travelers;
     }
     if (destination.selectedHotel) {
       hotelTotal = destination.selectedHotel.nightlyRate * nights;
     }
-    return { flightTotal, hotelTotal, total: flightTotal + hotelTotal };
+    return { 
+      departureFlightTotal, 
+      returnFlightTotal, 
+      flightTotal: departureFlightTotal + returnFlightTotal,
+      hotelTotal, 
+      total: departureFlightTotal + returnFlightTotal + hotelTotal 
+    };
   };
 
-  const hasSelections = destination.selectedFlight || destination.selectedHotel;
+  const hasSelections = destination.selectedDepartureFlight || destination.selectedReturnFlight || destination.selectedHotel;
   const prices = calculateTotalPrice();
 
   return (
@@ -404,29 +430,55 @@ const DestinationCard: React.FC<DestinationCardProps> = ({
           <PreferenceBars bars={destination.userBars} />
         )}
 
-        {/* Flight Section */}
+        {/* Outbound Flight Section */}
         <View style={styles.travelSection}>
           <View style={styles.travelRow}>
-            <Text style={styles.travelLabel}>FLIGHT</Text>
+            <Text style={styles.travelLabel}>OUTBOUND FLIGHT</Text>
             <TouchableOpacity
-              style={[styles.viewButton, destination.selectedFlight && styles.viewButtonSelected]}
-              onPress={onViewFlights}
+              style={[styles.viewButton, destination.selectedDepartureFlight && styles.viewButtonSelected]}
+              onPress={onViewDepartureFlight}
             >
-              <Text style={[styles.viewButtonText, destination.selectedFlight && styles.viewButtonTextSelected]}>
-                {destination.selectedFlight ? 'CHANGE' : 'VIEW'}
+              <Text style={[styles.viewButtonText, destination.selectedDepartureFlight && styles.viewButtonTextSelected]}>
+                {destination.selectedDepartureFlight ? 'CHANGE' : 'VIEW'}
               </Text>
             </TouchableOpacity>
           </View>
-          {destination.selectedFlight ? (
+          {destination.selectedDepartureFlight ? (
             <View style={styles.selectedContainer}>
-              <Text style={styles.selectedAirline}>{destination.selectedFlight.airline}</Text>
+              <Text style={styles.selectedAirline}>{destination.selectedDepartureFlight.airline}</Text>
               <Text style={styles.selectedDetails}>
-                {destination.selectedFlight.departureTime || '--:--'} · {destination.selectedFlight.stops === 0 ? 'Nonstop' : `${destination.selectedFlight.stops} stop${(destination.selectedFlight.stops || 0) > 1 ? 's' : ''}`}
+                {destination.selectedDepartureFlight.departureTime || '--:--'} · {destination.selectedDepartureFlight.stops === 0 ? 'Nonstop' : `${destination.selectedDepartureFlight.stops} stop${(destination.selectedDepartureFlight.stops || 0) > 1 ? 's' : ''}`}
               </Text>
-              <Text style={styles.selectedPrice}>${destination.selectedFlight.price} × {tripDetails.travelers} = ${prices.flightTotal}</Text>
+              <Text style={styles.selectedPrice}>${destination.selectedDepartureFlight.price} × {tripDetails.travelers} = ${prices.departureFlightTotal}</Text>
             </View>
           ) : (
-            <Text style={styles.noSelectionText}>No flight selected</Text>
+            <Text style={styles.noSelectionText}>No outbound flight selected</Text>
+          )}
+        </View>
+
+        {/* Return Flight Section */}
+        <View style={styles.travelSection}>
+          <View style={styles.travelRow}>
+            <Text style={styles.travelLabel}>RETURN FLIGHT</Text>
+            <TouchableOpacity
+              style={[styles.viewButton, destination.selectedReturnFlight && styles.viewButtonSelected]}
+              onPress={onViewReturnFlight}
+            >
+              <Text style={[styles.viewButtonText, destination.selectedReturnFlight && styles.viewButtonTextSelected]}>
+                {destination.selectedReturnFlight ? 'CHANGE' : 'VIEW'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {destination.selectedReturnFlight ? (
+            <View style={styles.selectedContainer}>
+              <Text style={styles.selectedAirline}>{destination.selectedReturnFlight.airline}</Text>
+              <Text style={styles.selectedDetails}>
+                {destination.selectedReturnFlight.departureTime || '--:--'} · {destination.selectedReturnFlight.stops === 0 ? 'Nonstop' : `${destination.selectedReturnFlight.stops} stop${(destination.selectedReturnFlight.stops || 0) > 1 ? 's' : ''}`}
+              </Text>
+              <Text style={styles.selectedPrice}>${destination.selectedReturnFlight.price} × {tripDetails.travelers} = ${prices.returnFlightTotal}</Text>
+            </View>
+          ) : (
+            <Text style={styles.noSelectionText}>No return flight selected</Text>
           )}
         </View>
 
@@ -531,6 +583,7 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
   const [flightModalVisible, setFlightModalVisible] = useState(false);
   const [hotelModalVisible, setHotelModalVisible] = useState(false);
   const [activeDestination, setActiveDestination] = useState<DestinationWithSelections | null>(null);
+  const [activeFlightDirection, setActiveFlightDirection] = useState<'departure' | 'return'>('departure');
 
   const voteMemberById = useMemo(
     () => new Map(voteMembers.map((member) => [member.userId, member])),
@@ -615,12 +668,17 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
   // }, []);
 
   // Handle flight selection
-  const handleFlightSelect = useCallback((destinationId: string, flight: FlightOption) => {
-    console.log('Flight selected:', destinationId, flight);
+  const handleFlightSelect = useCallback((destinationId: string, flight: FlightOption, direction: 'departure' | 'return') => {
+    console.log('Flight selected:', destinationId, flight, direction);
     setDestinationsWithSelections((prev) =>
-      prev.map((d) =>
-        d.id === destinationId ? { ...d, selectedFlight: flight } : d
-      )
+      prev.map((d) => {
+        if (d.id !== destinationId) return d;
+        if (direction === 'departure') {
+          return { ...d, selectedDepartureFlight: flight };
+        } else {
+          return { ...d, selectedReturnFlight: flight };
+        }
+      })
     );
   }, []);
 
@@ -634,9 +692,17 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
     );
   }, []);
 
-  // Open flight modal
-  const openFlightModal = useCallback((destination: DestinationWithSelections) => {
+  // Open flight modal for departure
+  const openDepartureFlightModal = useCallback((destination: DestinationWithSelections) => {
     setActiveDestination(destination);
+    setActiveFlightDirection('departure');
+    setFlightModalVisible(true);
+  }, []);
+
+  // Open flight modal for return
+  const openReturnFlightModal = useCallback((destination: DestinationWithSelections) => {
+    setActiveDestination(destination);
+    setActiveFlightDirection('return');
     setFlightModalVisible(true);
   }, []);
 
@@ -684,7 +750,8 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
               voterProfiles={voterProfiles}
               hasCurrentUserVoted={hasCurrentUserVoted}
               tripDetails={tripDetails}
-              onViewFlights={() => openFlightModal(destination)}
+              onViewDepartureFlight={() => openDepartureFlightModal(destination)}
+              onViewReturnFlight={() => openReturnFlightModal(destination)}
               onViewHotels={() => openHotelModal(destination)}
               onVote={() => onVote(destination.id, hasCurrentUserVoted)}
               locked={locked}
@@ -702,9 +769,10 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
         departureDate={tripDetails.departureDate}
         returnDate={tripDetails.returnDate}
         travelers={tripDetails.travelers}
-        onSelect={(flight) => {
+        flightDirection={activeFlightDirection}
+        onSelect={(flight, direction) => {
           if (activeDestination) {
-            handleFlightSelect(activeDestination.id, flight);
+            handleFlightSelect(activeDestination.id, flight, direction);
           }
         }}
         onClose={() => setFlightModalVisible(false)}
