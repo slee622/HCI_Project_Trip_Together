@@ -894,18 +894,6 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     setStage(target);
   }, [stage, compareList.length]);
 
-  // Handle drop from map popup drag onto compare panel
-  const handleDropToCompare = useCallback((dest: CompareDestination) => {
-    setCompareList((prev) => {
-      if (prev.some((d) => d.id === dest.id)) return prev;
-      return [...prev, dest];
-    });
-    if (tripSessionId) {
-      saveCompareDestination(tripSessionId, dest.id)
-        .then(() => broadcastTripEvent('trip_compare_added', { destination: dest }))
-        .catch((error) => console.warn('Failed to persist compare destination:', error));
-    }
-  }, [tripSessionId, broadcastTripEvent]);
 
   // Handle vote from compare screen
   const handleVote = useCallback(async (destinationId: string, removeVote = false) => {
@@ -966,13 +954,6 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       Alert.alert('Vote failed', message);
     }
   }, [tripSessionId, currentUserId, broadcastTripEvent]);
-
-  // Handle stage navigation from stepper
-  const handleStageNavigate = useCallback((target: TripStage) => {
-    if (stage === 'voted') return; // fully locked
-    if (target === 'compare' && compareList.length < 2) return;
-    setStage(target);
-  }, [stage, compareList.length]);
 
   // Check if destination is in compare list
   const isInCompareList = useCallback(
