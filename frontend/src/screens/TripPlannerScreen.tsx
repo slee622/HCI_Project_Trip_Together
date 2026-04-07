@@ -4,7 +4,7 @@
  */
 
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-import { View, StyleSheet, ScrollView } from 'react-native';
+import { Alert, View, StyleSheet, ScrollView } from 'react-native';
 import {
   UserPreferences,
   CompareDestination,
@@ -22,16 +22,19 @@ import { CompareScreen } from './CompareScreen';
 import {
   listTripCompareDestinations,
   StartupCompareOption,
+  StartupGroupMember,
   StartupRecommendation,
   StartupState,
   StartupVote,
 } from '../services/startupState';
 import {
+  removeTripVote,
   removeCompareDestination,
   saveCompareDestination,
   saveSelectedDestination,
   saveTripPreferences,
   saveTripRecommendations,
+  saveTripVote,
 } from '../services/tripStatePersistence';
 
 // Trip details configuration
@@ -120,6 +123,17 @@ function mapCompareOptionsToCompareDestinations(
   });
 }
 
+function mapGroupMembersToCompareUsers(
+  members: StartupGroupMember[]
+): Array<{ id: string; initial: string; color: string; preferences?: Record<string, number> }> {
+  const palette = ['#4A90D9', '#5C6AC4', '#2D9CDB', '#27AE60', '#E67E22', '#EB5757'];
+  return members.map((member, index) => ({
+    id: member.userId,
+    initial: (member.displayName || member.handle || 'U').trim().charAt(0).toUpperCase(),
+    color: palette[index % palette.length],
+  }));
+}
+
 export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   onSignOut,
   onBack,
@@ -151,6 +165,10 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     startupState?.selectedOption?.destinationId || null
   );
   const [votes, setVotes] = useState<StartupVote[]>(startupState?.votes || []);
+  const compareUsers = useMemo(
+    () => mapGroupMembersToCompareUsers(startupState?.groupMembers || []),
+    [startupState?.groupMembers]
+  );
 
   // Debounce timer ref
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -303,11 +321,58 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   }, [compareList]);
 
   // Handle vote from compare screen
-  const handleVote = useCallback((destinationId: string) => {
+  const handleVote = useCallback(async (destinationId: string, removeVote = false) => {
     console.log('Voted for destination:', destinationId);
-    // TODO: Save vote to backend
-    setShowCompareScreen(false);
-  }, []);
+
+    if (!tripSessionId || !currentUserId) {
+      console.warn('Missing trip session or user id, skipping vote persistence');
+      return;
+    }
+
+    try {
+      if (removeVote) {
+        await removeTripVote(tripSessionId, destinationId);
+        setVotes((prev) =>
+          prev.filter(
+            (vote) => !(vote.destinationId === destinationId && vote.userId === currentUserId)
+          )
+        );
+        return;
+      }
+
+      await saveTripVote(tripSessionId, destinationId, 1);
+      setVotes((prev) => {
+        const nowIso = new Date().toISOString();
+        const existingIndex = prev.findIndex(
+          (vote) => vote.destinationId === destinationId && vote.userId === currentUserId
+        );
+
+        if (existingIndex >= 0) {
+          const next = [...prev];
+          next[existingIndex] = {
+            ...next[existingIndex],
+            vote: 1,
+            updatedAt: nowIso,
+          };
+          return next;
+        }
+
+        return [
+          ...prev,
+          {
+            destinationId,
+            userId: currentUserId,
+            vote: 1,
+            updatedAt: nowIso,
+          },
+        ];
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save vote';
+      console.warn('Failed to persist vote:', error);
+      Alert.alert('Vote failed', message);
+    }
+  }, [tripSessionId, currentUserId]);
 
   // Check if destination is in compare list
   const isInCompareList = useCallback(
@@ -326,6 +391,9 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
           returnDate: activeTrip.returnDate,
           travelers: activeTrip.travelers,
         }}
+        users={compareUsers}
+        voteMembers={startupState?.groupMembers || []}
+        votes={votes}
         currentUserId={currentUserId}
         onBack={() => setShowCompareScreen(false)}
         onVote={handleVote}

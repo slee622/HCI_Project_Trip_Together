@@ -130,6 +130,21 @@ export async function saveTripVote(
   );
 }
 
+export async function removeTripVote(
+  tripSessionId: string,
+  destinationId: string
+): Promise<void> {
+  const session = await requireSession();
+  await callRpc<null>(
+    'remove_trip_vote',
+    {
+      p_trip_session_id: tripSessionId,
+      p_destination_id: destinationId,
+    },
+    session
+  );
+}
+
 export async function saveCompareDestination(
   tripSessionId: string,
   destinationId: string
