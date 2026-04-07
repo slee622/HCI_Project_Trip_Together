@@ -5,6 +5,7 @@
 
 import React, { useCallback, useEffect, useState } from 'react';
 import { ActivityIndicator, StyleSheet, Text, View } from 'react-native';
+import { RealtimeChannel } from '@supabase/supabase-js';
 import { TripPlannerScreen } from './screens/TripPlannerScreen';
 import { LoginScreen } from './screens/LoginScreen';
 import { CreateTripScreen, CreatedTripDetails } from './screens/CreateTripScreen';
@@ -26,6 +27,7 @@ import {
   rejectGroupInvite,
   StartupState,
 } from './services/startupState';
+import { getRealtimeClient, removeRealtimeChannel } from './services/realtime';
 
 type AppView = 'create-trip' | 'planner';
 
@@ -64,6 +66,14 @@ const App: React.FC = () => {
   const [currentTrips, setCurrentTrips] = useState<MyTripSummary[]>([]);
   const [pendingInvites, setPendingInvites] = useState<PendingGroupInvite[]>([]);
   const [plannerTripDetails, setPlannerTripDetails] = useState<PlannerTripDetails | null>(null);
+
+  const refreshPendingInvites = useCallback(async () => {
+    const invites = await listMyPendingGroupInvites().catch((error) => {
+      console.warn('Failed to refresh pending invites:', error);
+      return [];
+    });
+    setPendingInvites(invites);
+  }, []);
 
   useEffect(() => {
     let mounted = true;
@@ -143,6 +153,58 @@ const App: React.FC = () => {
       mounted = false;
     };
   }, [session]);
+
+  useEffect(() => {
+    if (!session?.user?.email) {
+      return;
+    }
+
+    let active = true;
+    let channel: RealtimeChannel | null = null;
+
+    const subscribe = async () => {
+      try {
+        const realtimeClient = await getRealtimeClient();
+        if (!active) return;
+
+        channel = realtimeClient
+          .channel(`invite-sync:${session.user.id}`)
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'group_invites',
+            },
+            () => {
+              if (!active) return;
+              void refreshPendingInvites();
+            }
+          );
+
+        channel.subscribe((status) => {
+          console.log('Invite realtime status:', status);
+          if (status === 'CHANNEL_ERROR') {
+            console.warn('Realtime channel error for pending invites');
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('Realtime invite channel timed out');
+          }
+        });
+      } catch (error) {
+        console.warn('Failed to connect realtime invite sync:', error);
+      }
+    };
+
+    void subscribe();
+
+    return () => {
+      active = false;
+      if (channel) {
+        removeRealtimeChannel(channel);
+      }
+    };
+  }, [session?.user?.id, session?.user?.email, refreshPendingInvites]);
 
   const handleTripCreated = useCallback((trip: CreatedTripDetails) => {
     setCurrentTrips((prev) => [
