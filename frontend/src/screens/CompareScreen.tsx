@@ -69,6 +69,8 @@ interface CompareScreenProps {
   currentUserId?: string;
   onBack: () => void;
   onVote: (destinationId: string, removeVote?: boolean) => void;
+  locked?: boolean;
+  votedDestinationIds?: string[];
 }
 
 const VOTER_COLORS = ['#4A90D9', '#5C6AC4', '#2D9CDB', '#27AE60', '#E67E22', '#EB5757'];
@@ -371,109 +373,120 @@ const DestinationCard: React.FC<DestinationCardProps> = ({
 
   return (
     <View style={styles.card}>
-      {/* Category Label */}
-      <Text style={styles.cardBestFor}>BEST FOR</Text>
-      <Text style={styles.cardCategory}>{destination.category}</Text>
-
-      {/* City Name */}
-      <Text style={styles.cardCity}>{destination.city}, {destination.state}</Text>
-
-      {/* Price */}
-      <Text style={styles.cardPrice}>
-        {hasSelections ? `$${prices.total.toLocaleString()}` : destination.priceRange}
-      </Text>
-      <Text style={styles.cardPriceLabel}>
-        {hasSelections ? `${tripDetails.travelers} traveler${tripDetails.travelers > 1 ? 's' : ''} · ${nights} night${nights > 1 ? 's' : ''}` : 'per person · estimated'}
-      </Text>
-
-      {/* User Preference Bars */}
-      {destination.userBars && destination.userBars.length > 0 && (
-        <PreferenceBars bars={destination.userBars} />
-      )}
-
-      {/* Flight Section */}
-      <View style={styles.travelSection}>
-        <View style={styles.travelRow}>
-          <Text style={styles.travelLabel}>FLIGHT</Text>
-          <TouchableOpacity 
-            style={[styles.viewButton, destination.selectedFlight && styles.viewButtonSelected]} 
-            onPress={onViewFlights}
-          >
-            <Text style={[styles.viewButtonText, destination.selectedFlight && styles.viewButtonTextSelected]}>
-              {destination.selectedFlight ? 'CHANGE' : 'VIEW'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-        {destination.selectedFlight ? (
-          <View style={styles.selectedContainer}>
-            <Text style={styles.selectedAirline}>{destination.selectedFlight.airline}</Text>
-            <Text style={styles.selectedDetails}>
-              {destination.selectedFlight.departureTime || '--:--'} · {destination.selectedFlight.stops === 0 ? 'Nonstop' : `${destination.selectedFlight.stops} stop${(destination.selectedFlight.stops || 0) > 1 ? 's' : ''}`}
-            </Text>
-            <Text style={styles.selectedPrice}>${destination.selectedFlight.price} × {tripDetails.travelers} = ${prices.flightTotal}</Text>
-          </View>
-        ) : (
-          <Text style={styles.noSelectionText}>No flight selected</Text>
-        )}
-      </View>
-
-      {/* Hotel Section */}
-      <View style={styles.travelSection}>
-        <View style={styles.travelRow}>
-          <Text style={styles.travelLabel}>HOTEL</Text>
-          <TouchableOpacity 
-            style={[styles.viewButton, destination.selectedHotel && styles.viewButtonSelected]} 
-            onPress={onViewHotels}
-          >
-            <Text style={[styles.viewButtonText, destination.selectedHotel && styles.viewButtonTextSelected]}>
-              {destination.selectedHotel ? 'CHANGE' : 'VIEW'}
-            </Text>
-          </TouchableOpacity>
-        </View>
-        {destination.selectedHotel ? (
-          <View style={styles.selectedContainer}>
-            <Text style={styles.selectedAirline}>{destination.selectedHotel.name}</Text>
-            <Text style={styles.selectedDetails}>
-              ★ {destination.selectedHotel.rating.toFixed(1)} · {destination.selectedHotel.amenities?.slice(0, 2).join(', ') || 'Standard'}
-            </Text>
-            <Text style={styles.selectedPrice}>${destination.selectedHotel.nightlyRate}/night × {nights} = ${prices.hotelTotal}</Text>
-          </View>
-        ) : (
-          <Text style={styles.noSelectionText}>No hotel selected</Text>
-        )}
-      </View>
-
-      {/* Vote Button */}
-      <View style={styles.votersSection}>
-        <Text style={styles.votersLabel}>
-          {voterProfiles.length === 0
-            ? 'No votes yet'
-            : `${voterProfiles.length} vote${voterProfiles.length > 1 ? 's' : ''}`}
-        </Text>
-        {voterProfiles.length > 0 && (
-          <View style={styles.votersRow}>
-            {voterProfiles.map((profile) => (
-              <View key={profile.userId} style={styles.voterChip}>
-                <View style={[styles.voterAvatar, { backgroundColor: profile.color }]}>
-                  <Text style={styles.voterAvatarText}>{profile.initial}</Text>
-                </View>
-                <Text style={styles.voterName} numberOfLines={1}>
-                  {profile.label}
-                </Text>
-              </View>
-            ))}
-          </View>
-        )}
-      </View>
-
-      <TouchableOpacity
-        style={[styles.voteButton, hasCurrentUserVoted && styles.removeVoteButton]}
-        onPress={onVote}
+      {/* Scrollable content */}
+      <ScrollView
+        style={styles.cardScroll}
+        contentContainerStyle={styles.cardScrollContent}
+        showsVerticalScrollIndicator={false}
+        nestedScrollEnabled
       >
-        <Text style={[styles.voteButtonText, hasCurrentUserVoted && styles.removeVoteButtonText]}>
-          {hasCurrentUserVoted ? 'REMOVE VOTE' : 'VOTE'}
+        {/* Category Label */}
+        <Text style={styles.cardBestFor}>BEST FOR</Text>
+        <Text style={styles.cardCategory}>{destination.category}</Text>
+
+        {/* City Name */}
+        <Text style={styles.cardCity}>{destination.city}, {destination.state}</Text>
+
+        {/* Price */}
+        <Text style={styles.cardPrice}>
+          {hasSelections ? `$${prices.total.toLocaleString()}` : destination.priceRange}
         </Text>
-      </TouchableOpacity>
+        <Text style={styles.cardPriceLabel}>
+          {hasSelections ? `${tripDetails.travelers} traveler${tripDetails.travelers > 1 ? 's' : ''} · ${nights} night${nights > 1 ? 's' : ''}` : 'per person · estimated'}
+        </Text>
+
+        {/* User Preference Bars */}
+        {destination.userBars && destination.userBars.length > 0 && (
+          <PreferenceBars bars={destination.userBars} />
+        )}
+
+        {/* Flight Section */}
+        <View style={styles.travelSection}>
+          <View style={styles.travelRow}>
+            <Text style={styles.travelLabel}>FLIGHT</Text>
+            <TouchableOpacity
+              style={[styles.viewButton, destination.selectedFlight && styles.viewButtonSelected]}
+              onPress={onViewFlights}
+            >
+              <Text style={[styles.viewButtonText, destination.selectedFlight && styles.viewButtonTextSelected]}>
+                {destination.selectedFlight ? 'CHANGE' : 'VIEW'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {destination.selectedFlight ? (
+            <View style={styles.selectedContainer}>
+              <Text style={styles.selectedAirline}>{destination.selectedFlight.airline}</Text>
+              <Text style={styles.selectedDetails}>
+                {destination.selectedFlight.departureTime || '--:--'} · {destination.selectedFlight.stops === 0 ? 'Nonstop' : `${destination.selectedFlight.stops} stop${(destination.selectedFlight.stops || 0) > 1 ? 's' : ''}`}
+              </Text>
+              <Text style={styles.selectedPrice}>${destination.selectedFlight.price} × {tripDetails.travelers} = ${prices.flightTotal}</Text>
+            </View>
+          ) : (
+            <Text style={styles.noSelectionText}>No flight selected</Text>
+          )}
+        </View>
+
+        {/* Hotel Section */}
+        <View style={styles.travelSection}>
+          <View style={styles.travelRow}>
+            <Text style={styles.travelLabel}>HOTEL</Text>
+            <TouchableOpacity
+              style={[styles.viewButton, destination.selectedHotel && styles.viewButtonSelected]}
+              onPress={onViewHotels}
+            >
+              <Text style={[styles.viewButtonText, destination.selectedHotel && styles.viewButtonTextSelected]}>
+                {destination.selectedHotel ? 'CHANGE' : 'VIEW'}
+              </Text>
+            </TouchableOpacity>
+          </View>
+          {destination.selectedHotel ? (
+            <View style={styles.selectedContainer}>
+              <Text style={styles.selectedAirline}>{destination.selectedHotel.name}</Text>
+              <Text style={styles.selectedDetails}>
+                ★ {destination.selectedHotel.rating.toFixed(1)} · {destination.selectedHotel.amenities?.slice(0, 2).join(', ') || 'Standard'}
+              </Text>
+              <Text style={styles.selectedPrice}>${destination.selectedHotel.nightlyRate}/night × {nights} = ${prices.hotelTotal}</Text>
+            </View>
+          ) : (
+            <Text style={styles.noSelectionText}>No hotel selected</Text>
+          )}
+        </View>
+
+        {/* Voters */}
+        <View style={styles.votersSection}>
+          <Text style={styles.votersLabel}>
+            {voterProfiles.length === 0
+              ? 'No votes yet'
+              : `${voterProfiles.length} vote${voterProfiles.length > 1 ? 's' : ''}`}
+          </Text>
+          {voterProfiles.length > 0 && (
+            <View style={styles.votersRow}>
+              {voterProfiles.map((profile) => (
+                <View key={profile.userId} style={styles.voterChip}>
+                  <View style={[styles.voterAvatar, { backgroundColor: profile.color }]}>
+                    <Text style={styles.voterAvatarText}>{profile.initial}</Text>
+                  </View>
+                  <Text style={styles.voterName} numberOfLines={1}>
+                    {profile.label}
+                  </Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+      </ScrollView>
+
+      {/* Vote button — pinned at bottom of card */}
+      <View style={styles.voteButtonWrapper}>
+        <TouchableOpacity
+          style={[styles.voteButton, hasCurrentUserVoted && styles.removeVoteButton]}
+          onPress={onVote}
+        >
+          <Text style={[styles.voteButtonText, hasCurrentUserVoted && styles.removeVoteButtonText]}>
+            {hasCurrentUserVoted ? 'REMOVE VOTE' : 'VOTE'}
+          </Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 };
@@ -627,7 +640,8 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.cardsContainer}
+        style={styles.cardsScroll}
+        contentContainerStyle={[styles.cardsContainer, { flexGrow: 1 }]}
       >
         {destinationsWithSelections.map((destination) => {
           const voterProfiles = getVoterProfilesForDestination(destination.id);
@@ -720,22 +734,43 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 60,
   },
+  cardsScroll: {
+    flex: 1,
+  },
   cardsContainer: {
     padding: 24,
     paddingBottom: 40,
     gap: 24,
+    // stretch children to fill the ScrollView's height (cross axis)
+    alignItems: 'stretch',
   },
   card: {
     backgroundColor: '#FFFFFF',
     borderRadius: 16,
-    padding: 24,
     width: 320,
-    marginRight: 24,
+    // no flex here — flex in a horizontal ScrollView applies to the horizontal axis
+    flexDirection: 'column',
+    overflow: 'hidden',
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 12,
     elevation: 4,
+  },
+  cardScroll: {
+    flex: 1, // fills card height above the pinned vote button
+  },
+  cardScrollContent: {
+    padding: 24,
+    paddingBottom: 8,
+    flexGrow: 1,
+  },
+  voteButtonWrapper: {
+    padding: 16,
+    paddingTop: 8,
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#F0F0F0',
   },
   cardBestFor: {
     fontSize: 11,

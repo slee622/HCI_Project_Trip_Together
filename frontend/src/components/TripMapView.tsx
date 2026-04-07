@@ -123,8 +123,20 @@ const MapPopupContent: React.FC<{
     ? `$${dest.estimate.low}-${dest.estimate.high}/person`
     : 'Price TBD';
 
-  return React.createElement('div', { style: { minWidth: 180, padding: 4 } }, [
-    React.createElement('div', { key: 'title', style: { fontSize: 16, fontWeight: 'bold', color: '#1A1A2E', marginBottom: 4 } }, 
+  const dragData = JSON.stringify({
+    id: dest.id,
+    city: dest.city,
+    state: dest.state,
+    category,
+    priceRange,
+  });
+
+  return React.createElement('div', {
+    draggable: true,
+    onDragStart: (e: any) => { e.dataTransfer.setData('application/json', dragData); },
+    style: { minWidth: 180, padding: 4, cursor: 'grab' },
+  }, [
+    React.createElement('div', { key: 'title', style: { fontSize: 16, fontWeight: 'bold', color: '#1A1A2E', marginBottom: 4 } },
       `${dest.city}, ${dest.state}`
     ),
     React.createElement('div', { key: 'category', style: { fontSize: 13, color: '#F5A623', fontWeight: 500, marginBottom: 4 } }, 
