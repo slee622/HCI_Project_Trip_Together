@@ -7,12 +7,21 @@ import React, { useRef, useState, useCallback, useEffect } from 'react';
 import { View, Text, StyleSheet, Platform } from 'react-native';
 import { SliderDimension } from '../types';
 
+export interface SliderMemberMarker {
+  userId: string;
+  initial: string;
+  color: string;
+  value: number; // 0-10
+  label?: string;
+}
+
 interface PreferenceSliderProps {
   dimension: SliderDimension;
   lowLabel: string;
   highLabel: string;
   value: number;
   onChange: (value: number) => void;
+  memberMarkers?: SliderMemberMarker[];
   disabled?: boolean;
 }
 
@@ -22,6 +31,7 @@ export const PreferenceSlider: React.FC<PreferenceSliderProps> = ({
   highLabel,
   value,
   onChange,
+  memberMarkers = [],
   disabled = false,
 }) => {
   const [isDragging, setIsDragging] = useState(false);
@@ -111,9 +121,40 @@ export const PreferenceSlider: React.FC<PreferenceSliderProps> = ({
               height: 8,
               backgroundColor: '#4A90D9',
               borderRadius: 4,
+              zIndex: 2,
               transition: isDragging ? 'none' : 'width 0.1s ease-out',
             }
           }),
+          ...memberMarkers.map((marker) =>
+            React.createElement(
+              'div',
+              {
+                key: `member-${dimension}-${marker.userId}`,
+                title: `${marker.label || marker.initial}: ${marker.value}`,
+                style: {
+                  position: 'absolute',
+                  left: `${getPositionPercent(marker.value)}%`,
+                  top: '50%',
+                  transform: 'translate(-50%, -50%)',
+                  width: 18,
+                  height: 18,
+                  borderRadius: '50%',
+                  backgroundColor: marker.color,
+                  border: '2px solid white',
+                  boxShadow: '0 1px 4px rgba(0,0,0,0.2)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  fontSize: 9,
+                  fontWeight: 700,
+                  color: '#FFFFFF',
+                  zIndex: 6,
+                  pointerEvents: 'none',
+                },
+              },
+              marker.initial
+            )
+          ),
           // Thumb
           React.createElement('div', {
             key: 'thumb',
@@ -150,6 +191,20 @@ export const PreferenceSlider: React.FC<PreferenceSliderProps> = ({
       <View style={styles.sliderTrack}>
         <View style={styles.trackBackground} />
         <View style={[styles.trackFill, { width: `${getPositionPercent(value)}%` }]} />
+        {memberMarkers.map((marker) => (
+          <View
+            key={`member-${dimension}-${marker.userId}`}
+            style={[
+              styles.memberMarker,
+              {
+                left: `${getPositionPercent(marker.value)}%`,
+                backgroundColor: marker.color,
+              },
+            ]}
+          >
+            <Text style={styles.memberMarkerText}>{marker.initial}</Text>
+          </View>
+        ))}
         <View style={[styles.thumb, { left: `${getPositionPercent(value)}%` }]} />
       </View>
     </View>
@@ -204,6 +259,23 @@ const styles = StyleSheet.create({
     marginLeft: -12,
     borderWidth: 3,
     borderColor: '#FFFFFF',
+  },
+  memberMarker: {
+    position: 'absolute',
+    width: 18,
+    height: 18,
+    borderRadius: 9,
+    marginLeft: -9,
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    zIndex: 6,
+  },
+  memberMarkerText: {
+    color: '#FFFFFF',
+    fontSize: 9,
+    fontWeight: '700',
   },
 });
 

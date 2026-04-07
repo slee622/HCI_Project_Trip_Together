@@ -50,3 +50,9 @@
 
 17. **2026-04-05: Compare list persistence uses dedicated trip destination table**
     Added compare spots are stored in `trip_compare_destinations` and read per trip via RPC when opening planner. This avoids overloading votes/selection semantics and keeps compare state independent and explicit.
+
+18. **2026-04-07: Multi-user trip collaboration sync uses Supabase Realtime sockets**
+    Planner interactions that can be changed by teammates (`trip_user_preferences`, `trip_compare_destinations`, and `trip_destination_votes`) now update local UI from websocket-driven Realtime events. Pending invite visibility is also realtime via `group_invites` subscription scoped to the signed-in user's email so invitees see incoming trip invites without manual refresh.
+
+19. **2026-04-07: Trip collaboration also emits direct channel broadcasts**
+    Planner write actions now send explicit Realtime channel broadcast events (`trip_preference_changed`, compare add/remove, vote add/remove) so teammate UI updates do not depend solely on Postgres publication event delivery timing. Postgres change listeners remain enabled as a secondary sync path.

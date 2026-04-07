@@ -4,12 +4,18 @@
  */
 
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+<<<<<<< stage-navigation
 import { View, StyleSheet, ScrollView, Text, TouchableOpacity } from 'react-native';
+=======
+import { Alert, View, StyleSheet, ScrollView } from 'react-native';
+import { RealtimeChannel } from '@supabase/supabase-js';
+>>>>>>> main
 import {
   UserPreferences,
   CompareDestination,
   RecommendationWithEstimate,
   DEFAULT_PREFERENCES,
+  SLIDER_CONFIGS,
   SliderDimension,
   userPrefsToGroupPrefs,
 } from '../types';
@@ -18,21 +24,27 @@ import { Header } from '../components/Header';
 import { PreferencesPanel } from '../components/PreferencesPanel';
 import { ComparePanel } from '../components/ComparePanel';
 import { TripMapView } from '../components/TripMapView';
+import { SliderMemberMarker } from '../components/MultiUserSlider';
 import { CompareScreen } from './CompareScreen';
 import {
   listTripCompareDestinations,
   StartupCompareOption,
+  StartupGroupMember,
+  StartupPreference,
   StartupRecommendation,
   StartupState,
   StartupVote,
 } from '../services/startupState';
 import {
+  removeTripVote,
   removeCompareDestination,
   saveCompareDestination,
   saveSelectedDestination,
   saveTripPreferences,
   saveTripRecommendations,
+  saveTripVote,
 } from '../services/tripStatePersistence';
+import { getRealtimeClient, removeRealtimeChannel } from '../services/realtime';
 
 // ============================================
 // STAGE TYPES & STEPPER COMPONENT
@@ -189,6 +201,46 @@ const DEFAULT_TRIP = {
 
 // Debounce delay for fetching recommendations after preference changes (ms)
 const DEBOUNCE_DELAY = 300;
+const MEMBER_COLOR_PALETTE = ['#4A90D9', '#5C6AC4', '#2D9CDB', '#27AE60', '#E67E22', '#EB5757'];
+
+interface TripPreferenceRealtimeRow {
+  user_id: string;
+  adventure: number;
+  budget: number;
+  setting: number;
+  weather: number;
+  focus: number;
+  updated_at: string;
+}
+
+interface TripVoteRealtimeRow {
+  destination_id: string;
+  user_id: string;
+  vote: -1 | 1;
+  updated_at: string;
+}
+
+interface TripPreferenceBroadcastPayload {
+  userId: string;
+  adventure: number;
+  budget: number;
+  setting: number;
+  weather: number;
+  focus: number;
+  updatedAt: string;
+}
+
+interface TripVoteBroadcastPayload {
+  destinationId: string;
+  userId: string;
+  vote?: -1 | 1;
+  updatedAt?: string;
+}
+
+interface TripCompareBroadcastPayload {
+  destination?: CompareDestination;
+  destinationId?: string;
+}
 
 interface TripPlannerScreenProps {
   onSignOut?: () => void;
@@ -264,6 +316,59 @@ function mapCompareOptionsToCompareDestinations(
   });
 }
 
+function mapGroupMembersToCompareUsers(
+  members: StartupGroupMember[]
+): Array<{ id: string; initial: string; color: string; preferences?: Record<string, number> }> {
+  return members.map((member, index) => ({
+    id: member.userId,
+    initial: (member.displayName || member.handle || 'U').trim().charAt(0).toUpperCase(),
+    color: MEMBER_COLOR_PALETTE[index % MEMBER_COLOR_PALETTE.length],
+  }));
+}
+
+function buildPreferenceMarkerByDimension(
+  members: StartupGroupMember[],
+  preferences: StartupPreference[],
+  currentUserId?: string
+): Record<SliderDimension, SliderMemberMarker[]> {
+  const markersByDimension: Record<SliderDimension, SliderMemberMarker[]> = {
+    adventure: [],
+    budget: [],
+    setting: [],
+    weather: [],
+    focus: [],
+  };
+
+  const preferenceByUserId = new Map(preferences.map((preference) => [preference.userId, preference]));
+
+  members.forEach((member, index) => {
+    if (currentUserId && member.userId === currentUserId) {
+      return;
+    }
+
+    const savedPreferences = preferenceByUserId.get(member.userId);
+    if (!savedPreferences) {
+      return;
+    }
+
+    const markerBase = {
+      userId: member.userId,
+      initial: (member.displayName || member.handle || 'U').trim().charAt(0).toUpperCase(),
+      color: MEMBER_COLOR_PALETTE[index % MEMBER_COLOR_PALETTE.length],
+      label: member.displayName || member.handle || 'User',
+    };
+
+    SLIDER_CONFIGS.forEach(({ key }) => {
+      markersByDimension[key].push({
+        ...markerBase,
+        value: clampPreference(savedPreferences[key]),
+      });
+    });
+  });
+
+  return markersByDimension;
+}
+
 export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   onSignOut,
   onBack,
@@ -272,12 +377,22 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   currentUserId,
   tripDetails,
 }) => {
+  const scopedStartupState = useMemo(() => {
+    if (!startupState?.tripSession) {
+      return null;
+    }
+    if (tripSessionId && startupState.tripSession.id !== tripSessionId) {
+      return null;
+    }
+    return startupState;
+  }, [startupState, tripSessionId]);
+
   const activeTrip = useMemo(() => tripDetails || DEFAULT_TRIP, [tripDetails]);
-  const skipNextAutoFetchRef = useRef(Boolean((startupState?.recommendations || []).length));
+  const skipNextAutoFetchRef = useRef(Boolean((scopedStartupState?.recommendations || []).length));
 
   // User preferences (5 sliders)
   const [preferences, setPreferences] = useState<UserPreferences>(() =>
-    resolvePreferencesFromStartup(startupState, currentUserId)
+    resolvePreferencesFromStartup(scopedStartupState, currentUserId)
   );
 
   // Compare destinations
@@ -289,13 +404,30 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
 
   // Recommendations from API
   const [recommendations, setRecommendations] = useState<RecommendationWithEstimate[]>(() =>
-    mapStartupRecommendations(startupState?.recommendations)
+    mapStartupRecommendations(scopedStartupState?.recommendations)
   );
   const [loading, setLoading] = useState(false);
   const [selectedDestinationId, setSelectedDestinationId] = useState<string | null>(
-    startupState?.selectedOption?.destinationId || null
+    scopedStartupState?.selectedOption?.destinationId || null
   );
-  const [votes, setVotes] = useState<StartupVote[]>(startupState?.votes || []);
+  const [livePreferences, setLivePreferences] = useState<StartupPreference[]>(
+    scopedStartupState?.preferences || []
+  );
+  const [votes, setVotes] = useState<StartupVote[]>(scopedStartupState?.votes || []);
+  const compareUsers = useMemo(
+    () => mapGroupMembersToCompareUsers(scopedStartupState?.groupMembers || []),
+    [scopedStartupState?.groupMembers]
+  );
+  const memberPreferenceMarkers = useMemo(
+    () =>
+      buildPreferenceMarkerByDimension(
+        scopedStartupState?.groupMembers || [],
+        livePreferences,
+        currentUserId
+      ),
+    [scopedStartupState?.groupMembers, livePreferences, currentUserId]
+  );
+  const tripRealtimeChannelRef = useRef<RealtimeChannel | null>(null);
 
   // Debounce timer ref
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -328,7 +460,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     } finally {
       setLoading(false);
     }
-  }, [activeTrip]);
+  }, [activeTrip, tripSessionId]);
 
   // Load recommendations on mount / preference change.
   useEffect(() => {
@@ -339,21 +471,30 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     fetchRecommendations(preferences);
   }, [fetchRecommendations, preferences]);
 
-  // Hydrate planner from startup payload when opening a trip.
+  // Hydrate planner only when startup payload matches the active trip.
   useEffect(() => {
-    if (!startupState?.tripSession) {
+    if (!tripSessionId) {
       return;
     }
 
-    setPreferences(resolvePreferencesFromStartup(startupState, currentUserId));
-    setRecommendations(mapStartupRecommendations(startupState.recommendations));
-    setSelectedDestinationId(startupState.selectedOption?.destinationId || null);
-    setVotes(startupState.votes || []);
-
-    if ((startupState.recommendations || []).length > 0) {
-      skipNextAutoFetchRef.current = true;
+    if (!scopedStartupState?.tripSession) {
+      setPreferences(DEFAULT_PREFERENCES);
+      setRecommendations([]);
+      setSelectedDestinationId(null);
+      setLivePreferences([]);
+      setVotes([]);
+      skipNextAutoFetchRef.current = false;
+      return;
     }
-  }, [startupState, currentUserId]);
+
+    setPreferences(resolvePreferencesFromStartup(scopedStartupState, currentUserId));
+    setRecommendations(mapStartupRecommendations(scopedStartupState.recommendations));
+    setSelectedDestinationId(scopedStartupState.selectedOption?.destinationId || null);
+    setLivePreferences(scopedStartupState.preferences || []);
+    setVotes(scopedStartupState.votes || []);
+
+    skipNextAutoFetchRef.current = (scopedStartupState.recommendations || []).length > 0;
+  }, [tripSessionId, scopedStartupState, currentUserId]);
 
   useEffect(() => {
     if (!tripSessionId || !selectedDestinationId) return;
@@ -363,7 +504,10 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   }, [tripSessionId, selectedDestinationId]);
 
   useEffect(() => {
-    if (!tripSessionId) return;
+    if (!tripSessionId) {
+      setCompareList([]);
+      return;
+    }
     listTripCompareDestinations(tripSessionId)
       .then((items) => {
         setCompareList(mapCompareOptionsToCompareDestinations(items));
@@ -372,6 +516,273 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
         console.warn('Failed to load compare destinations:', error);
       });
   }, [tripSessionId]);
+
+  const loadCompareDestinations = useCallback(() => {
+    if (!tripSessionId) return;
+    return listTripCompareDestinations(tripSessionId)
+      .then((items) => {
+        setCompareList(mapCompareOptionsToCompareDestinations(items));
+      })
+      .catch((error) => {
+        console.warn('Failed to load compare destinations:', error);
+      });
+  }, [tripSessionId]);
+
+  const upsertLivePreference = useCallback((row: TripPreferenceRealtimeRow): void => {
+    const mapped: StartupPreference = {
+      userId: row.user_id,
+      adventure: clampPreference(row.adventure),
+      budget: clampPreference(row.budget),
+      setting: clampPreference(row.setting),
+      weather: clampPreference(row.weather),
+      focus: clampPreference(row.focus),
+      updatedAt: row.updated_at,
+    };
+
+    setLivePreferences((prev) => {
+      const index = prev.findIndex((item) => item.userId === mapped.userId);
+      if (index < 0) {
+        return [...prev, mapped];
+      }
+      const next = [...prev];
+      next[index] = mapped;
+      return next;
+    });
+  }, []);
+
+  const applyRealtimeVote = useCallback((
+    row: TripVoteRealtimeRow,
+    eventType: 'INSERT' | 'UPDATE' | 'DELETE'
+  ): void => {
+    if (eventType === 'DELETE') {
+      setVotes((prev) =>
+        prev.filter(
+          (vote) => !(vote.destinationId === row.destination_id && vote.userId === row.user_id)
+        )
+      );
+      return;
+    }
+
+    const mapped: StartupVote = {
+      destinationId: row.destination_id,
+      userId: row.user_id,
+      vote: row.vote,
+      updatedAt: row.updated_at,
+    };
+
+    setVotes((prev) => {
+      const index = prev.findIndex(
+        (vote) => vote.destinationId === mapped.destinationId && vote.userId === mapped.userId
+      );
+      if (index < 0) {
+        return [...prev, mapped];
+      }
+      const next = [...prev];
+      next[index] = mapped;
+      return next;
+    });
+  }, []);
+
+  const broadcastTripEvent = useCallback(async (
+    event: string,
+    payload: Record<string, unknown>
+  ): Promise<void> => {
+    const channel = tripRealtimeChannelRef.current;
+    if (!channel) return;
+
+    try {
+      const result = await channel.send({
+        type: 'broadcast',
+        event,
+        payload,
+      });
+      if (result !== 'ok') {
+        console.warn(`Broadcast send failed (${event}):`, result);
+      }
+    } catch (error) {
+      console.warn(`Broadcast send error (${event}):`, error);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!tripSessionId) return;
+
+    let active = true;
+    let channel: RealtimeChannel | null = null;
+
+    const subscribe = async () => {
+      try {
+        const realtimeClient = await getRealtimeClient();
+        if (!active) return;
+
+        channel = realtimeClient
+          .channel(`trip-sync:${tripSessionId}`, {
+            config: {
+              broadcast: { self: false },
+            },
+          })
+          .on(
+            'broadcast',
+            { event: 'trip_preference_changed' },
+            ({ payload }) => {
+              if (!active) return;
+              const data = payload as TripPreferenceBroadcastPayload;
+              if (!data?.userId) return;
+
+              upsertLivePreference({
+                user_id: data.userId,
+                adventure: data.adventure,
+                budget: data.budget,
+                setting: data.setting,
+                weather: data.weather,
+                focus: data.focus,
+                updated_at: data.updatedAt,
+              });
+            }
+          )
+          .on(
+            'broadcast',
+            { event: 'trip_compare_added' },
+            ({ payload }) => {
+              if (!active) return;
+              const data = payload as TripCompareBroadcastPayload;
+              if (!data.destination?.id) return;
+              setCompareList((prev) => {
+                if (prev.some((item) => item.id === data.destination!.id)) {
+                  return prev;
+                }
+                return [...prev, data.destination!];
+              });
+            }
+          )
+          .on(
+            'broadcast',
+            { event: 'trip_compare_removed' },
+            ({ payload }) => {
+              if (!active) return;
+              const data = payload as TripCompareBroadcastPayload;
+              if (!data.destinationId) return;
+              setCompareList((prev) => prev.filter((item) => item.id !== data.destinationId));
+            }
+          )
+          .on(
+            'broadcast',
+            { event: 'trip_vote_changed' },
+            ({ payload }) => {
+              if (!active) return;
+              const data = payload as TripVoteBroadcastPayload;
+              if (!data.destinationId || !data.userId || !data.vote) return;
+              applyRealtimeVote(
+                {
+                  destination_id: data.destinationId,
+                  user_id: data.userId,
+                  vote: data.vote,
+                  updated_at: data.updatedAt || new Date().toISOString(),
+                },
+                'UPDATE'
+              );
+            }
+          )
+          .on(
+            'broadcast',
+            { event: 'trip_vote_removed' },
+            ({ payload }) => {
+              if (!active) return;
+              const data = payload as TripVoteBroadcastPayload;
+              if (!data.destinationId || !data.userId) return;
+              applyRealtimeVote(
+                {
+                  destination_id: data.destinationId,
+                  user_id: data.userId,
+                  vote: 1,
+                  updated_at: data.updatedAt || new Date().toISOString(),
+                },
+                'DELETE'
+              );
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'trip_user_preferences',
+              filter: `trip_session_id=eq.${tripSessionId}`,
+            },
+            (payload) => {
+              if (!active) return;
+              const eventType = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE';
+              const row = (
+                eventType === 'DELETE' ? payload.old : payload.new
+              ) as TripPreferenceRealtimeRow | null;
+              if (!row) return;
+
+              if (eventType === 'DELETE') {
+                setLivePreferences((prev) => prev.filter((item) => item.userId !== row.user_id));
+                return;
+              }
+              upsertLivePreference(row);
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'trip_destination_votes',
+              filter: `trip_session_id=eq.${tripSessionId}`,
+            },
+            (payload) => {
+              if (!active) return;
+              const eventType = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE';
+              const row = (
+                eventType === 'DELETE' ? payload.old : payload.new
+              ) as TripVoteRealtimeRow | null;
+              if (!row) return;
+              applyRealtimeVote(row, eventType);
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'trip_compare_destinations',
+              filter: `trip_session_id=eq.${tripSessionId}`,
+            },
+            () => {
+              if (!active) return;
+              void loadCompareDestinations();
+            }
+          );
+
+        tripRealtimeChannelRef.current = channel;
+        channel.subscribe((status) => {
+          console.log('Trip realtime status:', status, tripSessionId);
+          if (status === 'CHANNEL_ERROR') {
+            console.warn('Realtime channel error for trip sync:', tripSessionId);
+          }
+          if (status === 'TIMED_OUT') {
+            console.warn('Realtime trip channel timed out:', tripSessionId);
+          }
+        });
+      } catch (error) {
+        console.warn('Failed to connect realtime trip sync:', error);
+      }
+    };
+
+    void subscribe();
+
+    return () => {
+      active = false;
+      if (tripRealtimeChannelRef.current === channel) {
+        tripRealtimeChannelRef.current = null;
+      }
+      if (channel) {
+        removeRealtimeChannel(channel);
+      }
+    };
+  }, [tripSessionId, loadCompareDestinations, upsertLivePreference, applyRealtimeVote]);
 
   // Handle preference change from sliders
   const handlePreferenceChange = useCallback((
@@ -390,13 +801,21 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     }
     debounceRef.current = setTimeout(() => {
       if (tripSessionId) {
-        saveTripPreferences(tripSessionId, newPrefs).catch((persistError) => {
-          console.warn('Failed to persist preferences:', persistError);
-        });
+        saveTripPreferences(tripSessionId, newPrefs)
+          .then(() =>
+            broadcastTripEvent('trip_preference_changed', {
+              userId: currentUserId,
+              ...newPrefs,
+              updatedAt: new Date().toISOString(),
+            })
+          )
+          .catch((persistError) => {
+            console.warn('Failed to persist preferences:', persistError);
+          });
       }
       fetchRecommendations(newPrefs);
     }, DEBOUNCE_DELAY);
-  }, [preferences, fetchRecommendations, tripSessionId]);
+  }, [preferences, fetchRecommendations, tripSessionId, currentUserId, broadcastTripEvent]);
 
   // Cleanup debounce on unmount
   useEffect(() => {
@@ -424,21 +843,33 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       return [...prev, compareDestination];
     });
     if (tripSessionId) {
-      saveCompareDestination(tripSessionId, dest.id).catch((error) => {
-        console.warn('Failed to persist compare destination:', error);
-      });
+      saveCompareDestination(tripSessionId, dest.id)
+        .then(() =>
+          broadcastTripEvent('trip_compare_added', {
+            destination: compareDestination,
+          })
+        )
+        .catch((error) => {
+          console.warn('Failed to persist compare destination:', error);
+        });
     }
-  }, [tripSessionId]);
+  }, [tripSessionId, broadcastTripEvent]);
 
   // Remove destination from compare list
   const handleRemoveFromCompare = useCallback((id: string) => {
     setCompareList((prev) => prev.filter((d) => d.id !== id));
     if (tripSessionId) {
-      removeCompareDestination(tripSessionId, id).catch((error) => {
-        console.warn('Failed to remove compare destination:', error);
-      });
+      removeCompareDestination(tripSessionId, id)
+        .then(() =>
+          broadcastTripEvent('trip_compare_removed', {
+            destinationId: id,
+          })
+        )
+        .catch((error) => {
+          console.warn('Failed to remove compare destination:', error);
+        });
     }
-  }, [tripSessionId]);
+  }, [tripSessionId, broadcastTripEvent]);
 
   // Handle compare button click
   const handleCompare = useCallback(() => {
@@ -448,12 +879,78 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   }, [compareList]);
 
   // Handle vote from compare screen
+<<<<<<< stage-navigation
   const handleVote = useCallback((destinationIds: string[]) => {
     console.log('Voted for destinations:', destinationIds);
     // TODO: Save votes to backend
     setVotedDestinationIds(destinationIds);
     setStage('voted');
   }, []);
+=======
+  const handleVote = useCallback(async (destinationId: string, removeVote = false) => {
+    console.log('Voted for destination:', destinationId);
+
+    if (!tripSessionId || !currentUserId) {
+      console.warn('Missing trip session or user id, skipping vote persistence');
+      return;
+    }
+
+    try {
+      if (removeVote) {
+        await removeTripVote(tripSessionId, destinationId);
+        await broadcastTripEvent('trip_vote_removed', {
+          destinationId,
+          userId: currentUserId,
+          updatedAt: new Date().toISOString(),
+        });
+        setVotes((prev) =>
+          prev.filter(
+            (vote) => !(vote.destinationId === destinationId && vote.userId === currentUserId)
+          )
+        );
+        return;
+      }
+
+      await saveTripVote(tripSessionId, destinationId, 1);
+      const nowIso = new Date().toISOString();
+      await broadcastTripEvent('trip_vote_changed', {
+        destinationId,
+        userId: currentUserId,
+        vote: 1,
+        updatedAt: nowIso,
+      });
+      setVotes((prev) => {
+        const existingIndex = prev.findIndex(
+          (vote) => vote.destinationId === destinationId && vote.userId === currentUserId
+        );
+
+        if (existingIndex >= 0) {
+          const next = [...prev];
+          next[existingIndex] = {
+            ...next[existingIndex],
+            vote: 1,
+            updatedAt: nowIso,
+          };
+          return next;
+        }
+
+        return [
+          ...prev,
+          {
+            destinationId,
+            userId: currentUserId,
+            vote: 1,
+            updatedAt: nowIso,
+          },
+        ];
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Failed to save vote';
+      console.warn('Failed to persist vote:', error);
+      Alert.alert('Vote failed', message);
+    }
+  }, [tripSessionId, currentUserId, broadcastTripEvent]);
+>>>>>>> main
 
   // Handle stage navigation from stepper
   const handleStageNavigate = useCallback((target: TripStage) => {
@@ -468,7 +965,30 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     [compareList]
   );
 
+<<<<<<< stage-navigation
   const isLocked = stage === 'voted';
+=======
+  // Show compare screen if active
+  if (showCompareScreen) {
+    return (
+      <CompareScreen
+        destinations={compareList}
+        tripDetails={{
+          origin: activeTrip.origin,
+          departureDate: activeTrip.departureDate,
+          returnDate: activeTrip.returnDate,
+          travelers: activeTrip.travelers,
+        }}
+        users={compareUsers}
+        voteMembers={scopedStartupState?.groupMembers || []}
+        votes={votes}
+        currentUserId={currentUserId}
+        onBack={() => setShowCompareScreen(false)}
+        onVote={handleVote}
+      />
+    );
+  }
+>>>>>>> main
 
   return (
     <View style={styles.container}>
@@ -498,6 +1018,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
             contentContainerStyle={styles.sidebarContent}
             showsVerticalScrollIndicator
           >
+<<<<<<< stage-navigation
               <PreferencesPanel
                 preferences={preferences}
                 onPreferenceChange={handlePreferenceChange}
@@ -511,6 +1032,21 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
               />
             </ScrollView>
           </View>
+=======
+            <PreferencesPanel
+              preferences={preferences}
+              onPreferenceChange={handlePreferenceChange}
+              memberPreferenceMarkers={memberPreferenceMarkers}
+              disabled={loading}
+            />
+            <ComparePanel
+              destinations={compareList}
+              onCompare={handleCompare}
+              onRemoveDestination={handleRemoveFromCompare}
+            />
+          </ScrollView>
+        </View>
+>>>>>>> main
 
         {/* Map Area */}
           <View style={styles.mapContainer}>
