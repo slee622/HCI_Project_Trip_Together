@@ -887,6 +887,26 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     }
   }, [compareList]);
 
+  // Handle stage navigation from stepper
+  const handleStageNavigate = useCallback((target: TripStage) => {
+    if (stage === 'voted') return; // fully locked
+    if (target === 'compare' && compareList.length < 2) return;
+    setStage(target);
+  }, [stage, compareList.length]);
+
+  // Handle drop from map popup drag onto compare panel
+  const handleDropToCompare = useCallback((dest: CompareDestination) => {
+    setCompareList((prev) => {
+      if (prev.some((d) => d.id === dest.id)) return prev;
+      return [...prev, dest];
+    });
+    if (tripSessionId) {
+      saveCompareDestination(tripSessionId, dest.id)
+        .then(() => broadcastTripEvent('trip_compare_added', { destination: dest }))
+        .catch((error) => console.warn('Failed to persist compare destination:', error));
+    }
+  }, [tripSessionId, broadcastTripEvent]);
+
   // Handle vote from compare screen
   const handleVote = useCallback(async (destinationId: string, removeVote = false) => {
     console.log('Voted for destination:', destinationId);
@@ -962,22 +982,6 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
 
   const isLocked = stage === 'voted';
 
-  // Previously from main branch — kept here for reference (replaced by stage-based routing)
-  // if (showCompareScreen) {
-  //   return (
-  //     <CompareScreen
-  //       destinations={compareList}
-  //       tripDetails={{ origin: activeTrip.origin, departureDate: activeTrip.departureDate, returnDate: activeTrip.returnDate, travelers: activeTrip.travelers }}
-  //       users={compareUsers}
-  //       voteMembers={scopedStartupState?.groupMembers || []}
-  //       votes={votes}
-  //       currentUserId={currentUserId}
-  //       onBack={() => setShowCompareScreen(false)}
-  //       onVote={handleVote}
-  //     />
-  //   );
-  // }
-
   return (
     <View style={styles.container}>
       {/* Header */}
@@ -997,31 +1001,32 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
         onNavigate={handleStageNavigate}
       />
 
-      {/* Main Content — Preferences & Map */}
+      {/* Preferences & Map stage */}
       {stage === 'preferences' && (
         <View style={styles.content}>
-        {/* Left Sidebar */}
+          {/* Left Sidebar */}
           <View style={styles.sidebar}>
-          <ScrollView
-            contentContainerStyle={styles.sidebarContent}
-            showsVerticalScrollIndicator
-          >
-            <PreferencesPanel
-              preferences={preferences}
-              onPreferenceChange={handlePreferenceChange}
-              memberPreferenceMarkers={memberPreferenceMarkers}
-              disabled={loading}
-            />
-            <ComparePanel
-              destinations={compareList}
-              onCompare={handleCompare}
-              onRemoveDestination={handleRemoveFromCompare}
-              onDropDestination={handleDropToCompare}
-            />
-          </ScrollView>
-        </View>
+            <ScrollView
+              contentContainerStyle={styles.sidebarContent}
+              showsVerticalScrollIndicator
+            >
+              <PreferencesPanel
+                preferences={preferences}
+                onPreferenceChange={handlePreferenceChange}
+                memberPreferenceMarkers={memberPreferenceMarkers}
+                disabled={loading}
+              />
+              <ComparePanel
+                destinations={compareList}
+                onCompare={handleCompare}
+                onRemoveDestination={handleRemoveFromCompare}
+                onDropDestination={handleDropToCompare}
+                locked={false}
+              />
+            </ScrollView>
+          </View>
 
-        {/* Map Area */}
+          {/* Map Area */}
           <View style={styles.mapContainer}>
             <TripMapView
               recommendations={recommendations}
@@ -1045,6 +1050,9 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
             returnDate: activeTrip.returnDate,
             travelers: activeTrip.travelers,
           }}
+          users={compareUsers}
+          voteMembers={scopedStartupState?.groupMembers || []}
+          votes={votes}
           currentUserId={currentUserId}
           onBack={() => setStage('preferences')}
           onVote={handleVote}

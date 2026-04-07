@@ -3,7 +3,7 @@
  * Left sidebar panel for comparing destinations
  */
 
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect, useState, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { CompareDestination } from '../types';
 
@@ -30,13 +30,29 @@ export const ComparePanel: React.FC<ComparePanelProps> = ({
     const el = containerRef.current as any;
     if (!el) return;
 
-    const handleDragOver = (e: DragEvent) => {
+    // Use a counter so dragging over child elements doesn't flicker the drag state.
+    // dragenter increments, dragleave decrements — only clear when counter hits 0.
+    let dragCounter = 0;
+
+    const handleDragEnter = (e: DragEvent) => {
       e.preventDefault();
+      dragCounter++;
       setIsDragOver(true);
     };
-    const handleDragLeave = () => setIsDragOver(false);
+    const handleDragOver = (e: DragEvent) => {
+      // Must preventDefault on dragover to allow dropping
+      e.preventDefault();
+    };
+    const handleDragLeave = () => {
+      dragCounter--;
+      if (dragCounter <= 0) {
+        dragCounter = 0;
+        setIsDragOver(false);
+      }
+    };
     const handleDrop = (e: DragEvent) => {
       e.preventDefault();
+      dragCounter = 0;
       setIsDragOver(false);
       try {
         const data = JSON.parse((e as any).dataTransfer?.getData('application/json') || '{}');
@@ -48,10 +64,12 @@ export const ComparePanel: React.FC<ComparePanelProps> = ({
       }
     };
 
+    el.addEventListener('dragenter', handleDragEnter);
     el.addEventListener('dragover', handleDragOver);
     el.addEventListener('dragleave', handleDragLeave);
     el.addEventListener('drop', handleDrop);
     return () => {
+      el.removeEventListener('dragenter', handleDragEnter);
       el.removeEventListener('dragover', handleDragOver);
       el.removeEventListener('dragleave', handleDragLeave);
       el.removeEventListener('drop', handleDrop);
@@ -76,7 +94,7 @@ export const ComparePanel: React.FC<ComparePanelProps> = ({
           {isDragOver ? 'Release to add' : 'Drag a destination here'}
         </Text>
       </View>
-      
+
       <ScrollView style={styles.destinationList} nestedScrollEnabled>
         {destinations.map((dest) => (
           <CompareDestinationCard
@@ -97,13 +115,74 @@ interface CompareDestinationCardProps {
   locked?: boolean;
 }
 
+const SWIPE_THRESHOLD = 80;
+
 const CompareDestinationCard: React.FC<CompareDestinationCardProps> = ({
   destination,
   onRemove,
   locked = false,
 }) => {
+  const cardRef = useRef<View>(null);
+
+  const handleRemove = useCallback(() => onRemove(), [onRemove]);
+
+  useEffect(() => {
+    if (locked) return;
+    const el = cardRef.current as any;
+    if (!el) return;
+
+    let startX = 0;
+    let isDragging = false;
+
+    const onPointerDown = (e: any) => {
+      // Only respond to primary button (left click / single touch)
+      if (e.button !== 0 && e.pointerType === 'mouse') return;
+      isDragging = true;
+      startX = e.clientX;
+      el.setPointerCapture(e.pointerId);
+      el.style.transition = '';
+    };
+
+    const onPointerMove = (e: any) => {
+      if (!isDragging) return;
+      const delta = e.clientX - startX;
+      if (delta > 0) {
+        el.style.transform = `translateX(${delta}px)`;
+        el.style.opacity = String(Math.max(0, 1 - delta / 150));
+      }
+    };
+
+    const onPointerUp = (e: any) => {
+      if (!isDragging) return;
+      isDragging = false;
+      const delta = e.clientX - startX;
+      if (delta > SWIPE_THRESHOLD) {
+        el.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+        el.style.transform = 'translateX(400px)';
+        el.style.opacity = '0';
+        setTimeout(() => handleRemove(), 200);
+      } else {
+        el.style.transition = 'transform 0.2s ease, opacity 0.2s ease';
+        el.style.transform = 'translateX(0)';
+        el.style.opacity = '1';
+        setTimeout(() => { el.style.transition = ''; }, 200);
+      }
+    };
+
+    el.addEventListener('pointerdown', onPointerDown);
+    el.addEventListener('pointermove', onPointerMove);
+    el.addEventListener('pointerup', onPointerUp);
+    el.addEventListener('pointercancel', onPointerUp);
+    return () => {
+      el.removeEventListener('pointerdown', onPointerDown);
+      el.removeEventListener('pointermove', onPointerMove);
+      el.removeEventListener('pointerup', onPointerUp);
+      el.removeEventListener('pointercancel', onPointerUp);
+    };
+  }, [locked, handleRemove]);
+
   return (
-    <View style={styles.card}>
+    <View ref={cardRef} style={styles.card}>
       {!locked && (
         <TouchableOpacity style={styles.removeButton} onPress={onRemove}>
           <Text style={styles.removeText}>×</Text>
