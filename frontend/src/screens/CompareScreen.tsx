@@ -4,7 +4,7 @@
  * Matches the mockup with flight/hotel selection modals
  */
 
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import {
   View,
   Text,
@@ -35,6 +35,26 @@ interface DestinationWithSelections extends CompareDestination {
   userBars?: UserPreferenceBar[];
 }
 
+interface VoteMember {
+  userId: string;
+  handle: string;
+  displayName: string;
+  avatarUrl: string | null;
+}
+
+interface DestinationVote {
+  destinationId: string;
+  userId: string;
+  vote: -1 | 1;
+}
+
+interface VoterProfile {
+  userId: string;
+  label: string;
+  initial: string;
+  color: string;
+}
+
 interface CompareScreenProps {
   destinations: CompareDestination[];
   tripDetails: {
@@ -44,9 +64,23 @@ interface CompareScreenProps {
     travelers: number;
   };
   users?: Array<{ id: string; initial: string; color: string; preferences?: Record<string, number> }>;
+  voteMembers?: VoteMember[];
+  votes?: DestinationVote[];
   currentUserId?: string;
   onBack: () => void;
-  onVote: (destinationId: string) => void;
+  onVote: (destinationId: string, removeVote?: boolean) => void;
+}
+
+const VOTER_COLORS = ['#4A90D9', '#5C6AC4', '#2D9CDB', '#27AE60', '#E67E22', '#EB5757'];
+
+function initialFromLabel(label: string): string {
+  const normalized = (label || '').trim();
+  return normalized ? normalized.charAt(0).toUpperCase() : 'U';
+}
+
+function colorFromUserId(userId: string): string {
+  const hash = userId.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  return VOTER_COLORS[hash % VOTER_COLORS.length];
 }
 
 // ============================================
@@ -287,6 +321,8 @@ const PreferenceBars: React.FC<PreferenceBarsProps> = ({ bars }) => {
 
 interface DestinationCardProps {
   destination: DestinationWithSelections;
+  voterProfiles: VoterProfile[];
+  hasCurrentUserVoted: boolean;
   tripDetails: {
     origin: string;
     departureDate: string;
@@ -300,6 +336,8 @@ interface DestinationCardProps {
 
 const DestinationCard: React.FC<DestinationCardProps> = ({
   destination,
+  voterProfiles,
+  hasCurrentUserVoted,
   tripDetails,
   onViewFlights,
   onViewHotels,
@@ -406,8 +444,35 @@ const DestinationCard: React.FC<DestinationCardProps> = ({
       </View>
 
       {/* Vote Button */}
-      <TouchableOpacity style={styles.voteButton} onPress={onVote}>
-        <Text style={styles.voteButtonText}>CLICK TO VOTE</Text>
+      <View style={styles.votersSection}>
+        <Text style={styles.votersLabel}>
+          {voterProfiles.length === 0
+            ? 'No votes yet'
+            : `${voterProfiles.length} vote${voterProfiles.length > 1 ? 's' : ''}`}
+        </Text>
+        {voterProfiles.length > 0 && (
+          <View style={styles.votersRow}>
+            {voterProfiles.map((profile) => (
+              <View key={profile.userId} style={styles.voterChip}>
+                <View style={[styles.voterAvatar, { backgroundColor: profile.color }]}>
+                  <Text style={styles.voterAvatarText}>{profile.initial}</Text>
+                </View>
+                <Text style={styles.voterName} numberOfLines={1}>
+                  {profile.label}
+                </Text>
+              </View>
+            ))}
+          </View>
+        )}
+      </View>
+
+      <TouchableOpacity
+        style={[styles.voteButton, hasCurrentUserVoted && styles.removeVoteButton]}
+        onPress={onVote}
+      >
+        <Text style={[styles.voteButtonText, hasCurrentUserVoted && styles.removeVoteButtonText]}>
+          {hasCurrentUserVoted ? 'REMOVE VOTE' : 'VOTE'}
+        </Text>
       </TouchableOpacity>
     </View>
   );
@@ -421,6 +486,8 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
   destinations,
   tripDetails,
   users = [],
+  voteMembers = [],
+  votes = [],
   currentUserId,
   onBack,
   onVote,
@@ -443,6 +510,41 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
   const [flightModalVisible, setFlightModalVisible] = useState(false);
   const [hotelModalVisible, setHotelModalVisible] = useState(false);
   const [activeDestination, setActiveDestination] = useState<DestinationWithSelections | null>(null);
+
+  const voteMemberById = useMemo(
+    () => new Map(voteMembers.map((member) => [member.userId, member])),
+    [voteMembers]
+  );
+
+  const positiveVotesByDestination = useMemo(() => {
+    const byDestination = new Map<string, DestinationVote[]>();
+    votes
+      .filter((entry) => entry.vote === 1)
+      .forEach((entry) => {
+        const current = byDestination.get(entry.destinationId) || [];
+        current.push(entry);
+        byDestination.set(entry.destinationId, current);
+      });
+    return byDestination;
+  }, [votes]);
+
+  const getVoterProfilesForDestination = useCallback(
+    (destinationId: string): VoterProfile[] => {
+      const entries = positiveVotesByDestination.get(destinationId) || [];
+      const uniqueUserIds = [...new Set(entries.map((entry) => entry.userId))];
+      return uniqueUserIds.map((userId) => {
+        const member = voteMemberById.get(userId);
+        const label = member?.displayName || member?.handle || 'User';
+        return {
+          userId,
+          label,
+          initial: initialFromLabel(label),
+          color: colorFromUserId(userId),
+        };
+      });
+    },
+    [positiveVotesByDestination, voteMemberById]
+  );
 
   // Only update if destinations array actually changes (new destinations added)
   useEffect(() => {
@@ -527,16 +629,25 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.cardsContainer}
       >
-        {destinationsWithSelections.map((destination) => (
-          <DestinationCard
-            key={destination.id}
-            destination={destination}
-            tripDetails={tripDetails}
-            onViewFlights={() => openFlightModal(destination)}
-            onViewHotels={() => openHotelModal(destination)}
-            onVote={() => onVote(destination.id)}
-          />
-        ))}
+        {destinationsWithSelections.map((destination) => {
+          const voterProfiles = getVoterProfilesForDestination(destination.id);
+          const hasCurrentUserVoted = Boolean(
+            currentUserId && voterProfiles.some((profile) => profile.userId === currentUserId)
+          );
+
+          return (
+            <DestinationCard
+              key={destination.id}
+              destination={destination}
+              voterProfiles={voterProfiles}
+              hasCurrentUserVoted={hasCurrentUserVoted}
+              tripDetails={tripDetails}
+              onViewFlights={() => openFlightModal(destination)}
+              onViewHotels={() => openHotelModal(destination)}
+              onVote={() => onVote(destination.id, hasCurrentUserVoted)}
+            />
+          );
+        })}
       </ScrollView>
 
       {/* Flight Modal */}
@@ -767,11 +878,62 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
+  removeVoteButton: {
+    backgroundColor: '#FFE9EC',
+    borderWidth: 1,
+    borderColor: '#E03D56',
+  },
   voteButtonText: {
     fontSize: 16,
     fontWeight: '800',
     color: '#1A1A2E',
     letterSpacing: 0.5,
+  },
+  removeVoteButtonText: {
+    color: '#A01E31',
+  },
+  votersSection: {
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  votersLabel: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#5F6B7A',
+    marginBottom: 8,
+  },
+  votersRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  voterChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F2F5FA',
+    borderRadius: 999,
+    paddingVertical: 4,
+    paddingHorizontal: 8,
+    maxWidth: 140,
+  },
+  voterAvatar: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginRight: 6,
+  },
+  voterAvatarText: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 10,
+  },
+  voterName: {
+    fontSize: 12,
+    color: '#1A1A2E',
+    fontWeight: '600',
+    flexShrink: 1,
   },
   // Modal styles
   modalOverlay: {
