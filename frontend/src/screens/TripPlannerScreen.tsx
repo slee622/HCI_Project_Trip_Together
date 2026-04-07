@@ -4,8 +4,12 @@
  */
 
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
+<<<<<<< stage-navigation
+import { View, StyleSheet, ScrollView, Text, TouchableOpacity } from 'react-native';
+=======
 import { Alert, View, StyleSheet, ScrollView } from 'react-native';
 import { RealtimeChannel } from '@supabase/supabase-js';
+>>>>>>> main
 import {
   UserPreferences,
   CompareDestination,
@@ -41,6 +45,150 @@ import {
   saveTripVote,
 } from '../services/tripStatePersistence';
 import { getRealtimeClient, removeRealtimeChannel } from '../services/realtime';
+
+// ============================================
+// STAGE TYPES & STEPPER COMPONENT
+// ============================================
+
+export type TripStage = 'preferences' | 'compare' | 'voted';
+
+const STAGE_CONFIG: { key: TripStage; label: string; number: number }[] = [
+  { key: 'preferences', label: 'Preferences', number: 1 },
+  { key: 'compare', label: 'Compare', number: 2 },
+  { key: 'voted', label: 'Voted', number: 3 },
+];
+
+interface StageStepperProps {
+  stage: TripStage;
+  compareCount: number;
+  onNavigate: (stage: TripStage) => void;
+}
+
+const StageStepper: React.FC<StageStepperProps> = ({ stage, compareCount, onNavigate }) => {
+  const currentIndex = STAGE_CONFIG.findIndex((s) => s.key === stage);
+
+  return (
+    <View style={stepperStyles.container}>
+      {STAGE_CONFIG.map((s, index) => {
+        const isActive = s.key === stage;
+        const isCompleted = index < currentIndex;
+        const canNavigate =
+          (s.key === 'preferences' && stage !== 'voted') ||
+          (s.key === 'compare' && compareCount >= 2) ||
+          (s.key === 'voted' && stage === 'voted');
+
+        return (
+          <React.Fragment key={s.key}>
+            {index > 0 && (
+              <View style={[stepperStyles.line, isCompleted && stepperStyles.lineCompleted]} />
+            )}
+            <TouchableOpacity
+              style={stepperStyles.stepWrapper}
+              onPress={() => { if (canNavigate) onNavigate(s.key); }}
+              disabled={!canNavigate}
+            >
+              <View style={[
+                stepperStyles.stepCircle,
+                isActive && stepperStyles.stepCircleActive,
+                isCompleted && stepperStyles.stepCircleCompleted,
+                !canNavigate && !isActive && !isCompleted && stepperStyles.stepCircleLocked,
+              ]}>
+                <Text style={[
+                  stepperStyles.stepNumber,
+                  (isActive || isCompleted) && stepperStyles.stepNumberLight,
+                ]}>
+                  {isCompleted ? '✓' : String(s.number)}
+                </Text>
+              </View>
+              <Text style={[
+                stepperStyles.stepLabel,
+                isActive && stepperStyles.stepLabelActive,
+                isCompleted && stepperStyles.stepLabelCompleted,
+                !canNavigate && !isActive && !isCompleted && stepperStyles.stepLabelLocked,
+              ]}>
+                {s.label}
+                {s.key === 'voted' && stage !== 'voted' ? ' 🔒' : ''}
+              </Text>
+            </TouchableOpacity>
+          </React.Fragment>
+        );
+      })}
+    </View>
+  );
+};
+
+const stepperStyles = StyleSheet.create({
+  container: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    backgroundColor: '#FFFFFF',
+    borderBottomWidth: 1,
+    borderBottomColor: '#E8E8E8',
+    gap: 0,
+  },
+  line: {
+    flex: 1,
+    height: 2,
+    backgroundColor: '#E0E0E0',
+    maxWidth: 80,
+    marginHorizontal: 4,
+  },
+  lineCompleted: {
+    backgroundColor: '#F5A623',
+  },
+  stepWrapper: {
+    alignItems: 'center',
+    gap: 4,
+  },
+  stepCircle: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: '#F0F0F0',
+    borderWidth: 2,
+    borderColor: '#D0D0D0',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  stepCircleActive: {
+    backgroundColor: '#F5A623',
+    borderColor: '#F5A623',
+  },
+  stepCircleCompleted: {
+    backgroundColor: '#4CAF50',
+    borderColor: '#4CAF50',
+  },
+  stepCircleLocked: {
+    backgroundColor: '#F0F0F0',
+    borderColor: '#CBD5E1',
+  },
+  stepNumber: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#999',
+  },
+  stepNumberLight: {
+    color: '#FFFFFF',
+  },
+  stepLabel: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#9CA3AF',
+  },
+  stepLabelActive: {
+    color: '#F5A623',
+    fontWeight: '800',
+  },
+  stepLabelCompleted: {
+    color: '#4CAF50',
+  },
+  stepLabelLocked: {
+    color: '#CBD5E1',
+  },
+});
 
 // Trip details configuration
 const DEFAULT_TRIP = {
@@ -250,8 +398,9 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   // Compare destinations
   const [compareList, setCompareList] = useState<CompareDestination[]>([]);
 
-  // Show compare screen
-  const [showCompareScreen, setShowCompareScreen] = useState(false);
+  // Stage navigation
+  const [stage, setStage] = useState<TripStage>('preferences');
+  const [votedDestinationIds, setVotedDestinationIds] = useState<string[]>([]);
 
   // Recommendations from API
   const [recommendations, setRecommendations] = useState<RecommendationWithEstimate[]>(() =>
@@ -725,11 +874,19 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   // Handle compare button click
   const handleCompare = useCallback(() => {
     if (compareList.length >= 2) {
-      setShowCompareScreen(true);
+      setStage('compare');
     }
   }, [compareList]);
 
   // Handle vote from compare screen
+<<<<<<< stage-navigation
+  const handleVote = useCallback((destinationIds: string[]) => {
+    console.log('Voted for destinations:', destinationIds);
+    // TODO: Save votes to backend
+    setVotedDestinationIds(destinationIds);
+    setStage('voted');
+  }, []);
+=======
   const handleVote = useCallback(async (destinationId: string, removeVote = false) => {
     console.log('Voted for destination:', destinationId);
 
@@ -793,6 +950,14 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       Alert.alert('Vote failed', message);
     }
   }, [tripSessionId, currentUserId, broadcastTripEvent]);
+>>>>>>> main
+
+  // Handle stage navigation from stepper
+  const handleStageNavigate = useCallback((target: TripStage) => {
+    if (stage === 'voted') return; // fully locked
+    if (target === 'compare' && compareList.length < 2) return;
+    setStage(target);
+  }, [stage, compareList.length]);
 
   // Check if destination is in compare list
   const isInCompareList = useCallback(
@@ -800,6 +965,9 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     [compareList]
   );
 
+<<<<<<< stage-navigation
+  const isLocked = stage === 'voted';
+=======
   // Show compare screen if active
   if (showCompareScreen) {
     return (
@@ -820,6 +988,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       />
     );
   }
+>>>>>>> main
 
   return (
     <View style={styles.container}>
@@ -833,14 +1002,37 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
         doneLabel={onSignOut ? 'SIGN OUT' : 'DONE'}
       />
 
-      {/* Main Content */}
-      <View style={styles.content}>
+      {/* Stage Stepper */}
+      <StageStepper
+        stage={stage}
+        compareCount={compareList.length}
+        onNavigate={handleStageNavigate}
+      />
+
+      {/* Main Content — Preferences & Map */}
+      {stage === 'preferences' && (
+        <View style={styles.content}>
         {/* Left Sidebar */}
-        <View style={styles.sidebar}>
+          <View style={styles.sidebar}>
           <ScrollView
             contentContainerStyle={styles.sidebarContent}
             showsVerticalScrollIndicator
           >
+<<<<<<< stage-navigation
+              <PreferencesPanel
+                preferences={preferences}
+                onPreferenceChange={handlePreferenceChange}
+                disabled={loading}
+              />
+              <ComparePanel
+                destinations={compareList}
+                onCompare={handleCompare}
+                onRemoveDestination={handleRemoveFromCompare}
+                locked={false}
+              />
+            </ScrollView>
+          </View>
+=======
             <PreferencesPanel
               preferences={preferences}
               onPreferenceChange={handlePreferenceChange}
@@ -854,19 +1046,39 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
             />
           </ScrollView>
         </View>
+>>>>>>> main
 
         {/* Map Area */}
-        <View style={styles.mapContainer}>
-          <TripMapView
-            recommendations={recommendations}
-            selectedDestinationId={selectedDestinationId}
-            onSelectDestination={setSelectedDestinationId}
-            onAddToCompare={handleAddToCompare}
-            isInCompareList={isInCompareList}
-            loading={loading}
-          />
+          <View style={styles.mapContainer}>
+            <TripMapView
+              recommendations={recommendations}
+              selectedDestinationId={selectedDestinationId}
+              onSelectDestination={setSelectedDestinationId}
+              onAddToCompare={handleAddToCompare}
+              isInCompareList={isInCompareList}
+              loading={loading}
+            />
+          </View>
         </View>
-      </View>
+      )}
+
+      {/* Compare & Voted stages */}
+      {(stage === 'compare' || stage === 'voted') && (
+        <CompareScreen
+          destinations={compareList}
+          tripDetails={{
+            origin: activeTrip.origin,
+            departureDate: activeTrip.departureDate,
+            returnDate: activeTrip.returnDate,
+            travelers: activeTrip.travelers,
+          }}
+          currentUserId={currentUserId}
+          onBack={() => setStage('preferences')}
+          onVote={handleVote}
+          locked={isLocked}
+          votedDestinationIds={votedDestinationIds}
+        />
+      )}
     </View>
   );
 };

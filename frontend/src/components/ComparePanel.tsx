@@ -11,22 +11,25 @@ interface ComparePanelProps {
   destinations: CompareDestination[];
   onCompare: () => void;
   onRemoveDestination: (id: string) => void;
+  locked?: boolean;
 }
 
 export const ComparePanel: React.FC<ComparePanelProps> = ({
   destinations,
   onCompare,
   onRemoveDestination,
+  locked = false,
 }) => {
+  const canCompare = destinations.length >= 2 && !locked;
   return (
     <View style={styles.container}>
       <Text style={styles.title}>COMPARE</Text>
       <Text style={styles.subtitle}>Swipe right to remove</Text>
-      
-      <TouchableOpacity 
-        style={[styles.compareButton, destinations.length < 2 && styles.compareButtonDisabled]} 
+
+      <TouchableOpacity
+        style={[styles.compareButton, !canCompare && styles.compareButtonDisabled]}
         onPress={onCompare}
-        disabled={destinations.length < 2}
+        disabled={!canCompare}
       >
         <Text style={styles.compareButtonText}>CLICK TO COMPARE</Text>
       </TouchableOpacity>
@@ -41,6 +44,7 @@ export const ComparePanel: React.FC<ComparePanelProps> = ({
             key={dest.id}
             destination={dest}
             onRemove={() => onRemoveDestination(dest.id)}
+            locked={locked}
           />
         ))}
       </ScrollView>
@@ -51,17 +55,21 @@ export const ComparePanel: React.FC<ComparePanelProps> = ({
 interface CompareDestinationCardProps {
   destination: CompareDestination;
   onRemove: () => void;
+  locked?: boolean;
 }
 
 const CompareDestinationCard: React.FC<CompareDestinationCardProps> = ({
   destination,
   onRemove,
+  locked = false,
 }) => {
   return (
     <View style={styles.card}>
-      <TouchableOpacity style={styles.removeButton} onPress={onRemove}>
-        <Text style={styles.removeText}>×</Text>
-      </TouchableOpacity>
+      {!locked && (
+        <TouchableOpacity style={styles.removeButton} onPress={onRemove}>
+          <Text style={styles.removeText}>×</Text>
+        </TouchableOpacity>
+      )}
       <Text style={styles.cardCity}>{destination.city}, {destination.state}</Text>
       <Text style={styles.cardCategory}>{destination.category}</Text>
       <Text style={styles.cardPrice}>{destination.priceRange}</Text>
