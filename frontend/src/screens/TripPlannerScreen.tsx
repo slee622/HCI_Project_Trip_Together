@@ -229,12 +229,22 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   currentUserId,
   tripDetails,
 }) => {
+  const scopedStartupState = useMemo(() => {
+    if (!startupState?.tripSession) {
+      return null;
+    }
+    if (tripSessionId && startupState.tripSession.id !== tripSessionId) {
+      return null;
+    }
+    return startupState;
+  }, [startupState, tripSessionId]);
+
   const activeTrip = useMemo(() => tripDetails || DEFAULT_TRIP, [tripDetails]);
-  const skipNextAutoFetchRef = useRef(Boolean((startupState?.recommendations || []).length));
+  const skipNextAutoFetchRef = useRef(Boolean((scopedStartupState?.recommendations || []).length));
 
   // User preferences (5 sliders)
   const [preferences, setPreferences] = useState<UserPreferences>(() =>
-    resolvePreferencesFromStartup(startupState, currentUserId)
+    resolvePreferencesFromStartup(scopedStartupState, currentUserId)
   );
 
   // Compare destinations
@@ -245,28 +255,28 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
 
   // Recommendations from API
   const [recommendations, setRecommendations] = useState<RecommendationWithEstimate[]>(() =>
-    mapStartupRecommendations(startupState?.recommendations)
+    mapStartupRecommendations(scopedStartupState?.recommendations)
   );
   const [loading, setLoading] = useState(false);
   const [selectedDestinationId, setSelectedDestinationId] = useState<string | null>(
-    startupState?.selectedOption?.destinationId || null
+    scopedStartupState?.selectedOption?.destinationId || null
   );
   const [livePreferences, setLivePreferences] = useState<StartupPreference[]>(
-    startupState?.preferences || []
+    scopedStartupState?.preferences || []
   );
-  const [votes, setVotes] = useState<StartupVote[]>(startupState?.votes || []);
+  const [votes, setVotes] = useState<StartupVote[]>(scopedStartupState?.votes || []);
   const compareUsers = useMemo(
-    () => mapGroupMembersToCompareUsers(startupState?.groupMembers || []),
-    [startupState?.groupMembers]
+    () => mapGroupMembersToCompareUsers(scopedStartupState?.groupMembers || []),
+    [scopedStartupState?.groupMembers]
   );
   const memberPreferenceMarkers = useMemo(
     () =>
       buildPreferenceMarkerByDimension(
-        startupState?.groupMembers || [],
+        scopedStartupState?.groupMembers || [],
         livePreferences,
         currentUserId
       ),
-    [startupState?.groupMembers, livePreferences, currentUserId]
+    [scopedStartupState?.groupMembers, livePreferences, currentUserId]
   );
   const tripRealtimeChannelRef = useRef<RealtimeChannel | null>(null);
 
@@ -312,22 +322,30 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     fetchRecommendations(preferences);
   }, [fetchRecommendations, preferences]);
 
-  // Hydrate planner from startup payload when opening a trip.
+  // Hydrate planner only when startup payload matches the active trip.
   useEffect(() => {
-    if (!startupState?.tripSession) {
+    if (!tripSessionId) {
       return;
     }
 
-    setPreferences(resolvePreferencesFromStartup(startupState, currentUserId));
-    setRecommendations(mapStartupRecommendations(startupState.recommendations));
-    setSelectedDestinationId(startupState.selectedOption?.destinationId || null);
-    setLivePreferences(startupState.preferences || []);
-    setVotes(startupState.votes || []);
-
-    if ((startupState.recommendations || []).length > 0) {
-      skipNextAutoFetchRef.current = true;
+    if (!scopedStartupState?.tripSession) {
+      setPreferences(DEFAULT_PREFERENCES);
+      setRecommendations([]);
+      setSelectedDestinationId(null);
+      setLivePreferences([]);
+      setVotes([]);
+      skipNextAutoFetchRef.current = false;
+      return;
     }
-  }, [startupState, currentUserId]);
+
+    setPreferences(resolvePreferencesFromStartup(scopedStartupState, currentUserId));
+    setRecommendations(mapStartupRecommendations(scopedStartupState.recommendations));
+    setSelectedDestinationId(scopedStartupState.selectedOption?.destinationId || null);
+    setLivePreferences(scopedStartupState.preferences || []);
+    setVotes(scopedStartupState.votes || []);
+
+    skipNextAutoFetchRef.current = (scopedStartupState.recommendations || []).length > 0;
+  }, [tripSessionId, scopedStartupState, currentUserId]);
 
   useEffect(() => {
     if (!tripSessionId || !selectedDestinationId) return;
@@ -794,7 +812,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
           travelers: activeTrip.travelers,
         }}
         users={compareUsers}
-        voteMembers={startupState?.groupMembers || []}
+        voteMembers={scopedStartupState?.groupMembers || []}
         votes={votes}
         currentUserId={currentUserId}
         onBack={() => setShowCompareScreen(false)}
