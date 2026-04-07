@@ -4,12 +4,8 @@
  */
 
 import React, { useMemo, useState, useCallback, useEffect, useRef } from 'react';
-<<<<<<< stage-navigation
-import { View, StyleSheet, ScrollView, Text, TouchableOpacity } from 'react-native';
-=======
-import { Alert, View, StyleSheet, ScrollView } from 'react-native';
+import { Alert, View, StyleSheet, ScrollView, Text, TouchableOpacity } from 'react-native';
 import { RealtimeChannel } from '@supabase/supabase-js';
->>>>>>> main
 import {
   UserPreferences,
   CompareDestination,
@@ -871,6 +867,19 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     }
   }, [tripSessionId, broadcastTripEvent]);
 
+  // Handle destination dropped onto compare panel (already a CompareDestination)
+  const handleDropToCompare = useCallback((dest: CompareDestination) => {
+    setCompareList((prev) => {
+      if (prev.some((d) => d.id === dest.id)) return prev;
+      return [...prev, dest];
+    });
+    if (tripSessionId) {
+      saveCompareDestination(tripSessionId, dest.id)
+        .then(() => broadcastTripEvent('trip_compare_added', { destination: dest }))
+        .catch((error) => console.warn('Failed to persist compare destination:', error));
+    }
+  }, [tripSessionId, broadcastTripEvent]);
+
   // Handle compare button click
   const handleCompare = useCallback(() => {
     if (compareList.length >= 2) {
@@ -879,19 +888,17 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   }, [compareList]);
 
   // Handle vote from compare screen
-<<<<<<< stage-navigation
-  const handleVote = useCallback((destinationIds: string[]) => {
-    console.log('Voted for destinations:', destinationIds);
-    // TODO: Save votes to backend
-    setVotedDestinationIds(destinationIds);
-    setStage('voted');
-  }, []);
-=======
   const handleVote = useCallback(async (destinationId: string, removeVote = false) => {
     console.log('Voted for destination:', destinationId);
 
     if (!tripSessionId || !currentUserId) {
       console.warn('Missing trip session or user id, skipping vote persistence');
+      if (!removeVote) {
+        setVotedDestinationIds((prev) => [...prev.filter((id) => id !== destinationId), destinationId]);
+        setStage('voted');
+      } else {
+        setVotedDestinationIds((prev) => prev.filter((id) => id !== destinationId));
+      }
       return;
     }
 
@@ -908,6 +915,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
             (vote) => !(vote.destinationId === destinationId && vote.userId === currentUserId)
           )
         );
+        setVotedDestinationIds((prev) => prev.filter((id) => id !== destinationId));
         return;
       }
 
@@ -923,34 +931,21 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
         const existingIndex = prev.findIndex(
           (vote) => vote.destinationId === destinationId && vote.userId === currentUserId
         );
-
         if (existingIndex >= 0) {
           const next = [...prev];
-          next[existingIndex] = {
-            ...next[existingIndex],
-            vote: 1,
-            updatedAt: nowIso,
-          };
+          next[existingIndex] = { ...next[existingIndex], vote: 1, updatedAt: nowIso };
           return next;
         }
-
-        return [
-          ...prev,
-          {
-            destinationId,
-            userId: currentUserId,
-            vote: 1,
-            updatedAt: nowIso,
-          },
-        ];
+        return [...prev, { destinationId, userId: currentUserId, vote: 1, updatedAt: nowIso }];
       });
+      setVotedDestinationIds((prev) => [...prev.filter((id) => id !== destinationId), destinationId]);
+      setStage('voted');
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save vote';
       console.warn('Failed to persist vote:', error);
       Alert.alert('Vote failed', message);
     }
   }, [tripSessionId, currentUserId, broadcastTripEvent]);
->>>>>>> main
 
   // Handle stage navigation from stepper
   const handleStageNavigate = useCallback((target: TripStage) => {
@@ -965,30 +960,23 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     [compareList]
   );
 
-<<<<<<< stage-navigation
   const isLocked = stage === 'voted';
-=======
-  // Show compare screen if active
-  if (showCompareScreen) {
-    return (
-      <CompareScreen
-        destinations={compareList}
-        tripDetails={{
-          origin: activeTrip.origin,
-          departureDate: activeTrip.departureDate,
-          returnDate: activeTrip.returnDate,
-          travelers: activeTrip.travelers,
-        }}
-        users={compareUsers}
-        voteMembers={scopedStartupState?.groupMembers || []}
-        votes={votes}
-        currentUserId={currentUserId}
-        onBack={() => setShowCompareScreen(false)}
-        onVote={handleVote}
-      />
-    );
-  }
->>>>>>> main
+
+  // Previously from main branch — kept here for reference (replaced by stage-based routing)
+  // if (showCompareScreen) {
+  //   return (
+  //     <CompareScreen
+  //       destinations={compareList}
+  //       tripDetails={{ origin: activeTrip.origin, departureDate: activeTrip.departureDate, returnDate: activeTrip.returnDate, travelers: activeTrip.travelers }}
+  //       users={compareUsers}
+  //       voteMembers={scopedStartupState?.groupMembers || []}
+  //       votes={votes}
+  //       currentUserId={currentUserId}
+  //       onBack={() => setShowCompareScreen(false)}
+  //       onVote={handleVote}
+  //     />
+  //   );
+  // }
 
   return (
     <View style={styles.container}>
@@ -1018,21 +1006,6 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
             contentContainerStyle={styles.sidebarContent}
             showsVerticalScrollIndicator
           >
-<<<<<<< stage-navigation
-              <PreferencesPanel
-                preferences={preferences}
-                onPreferenceChange={handlePreferenceChange}
-                disabled={loading}
-              />
-              <ComparePanel
-                destinations={compareList}
-                onCompare={handleCompare}
-                onRemoveDestination={handleRemoveFromCompare}
-                locked={false}
-              />
-            </ScrollView>
-          </View>
-=======
             <PreferencesPanel
               preferences={preferences}
               onPreferenceChange={handlePreferenceChange}
@@ -1043,10 +1016,10 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
               destinations={compareList}
               onCompare={handleCompare}
               onRemoveDestination={handleRemoveFromCompare}
+              onDropDestination={handleDropToCompare}
             />
           </ScrollView>
         </View>
->>>>>>> main
 
         {/* Map Area */}
           <View style={styles.mapContainer}>

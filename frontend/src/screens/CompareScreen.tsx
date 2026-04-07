@@ -68,12 +68,9 @@ interface CompareScreenProps {
   votes?: DestinationVote[];
   currentUserId?: string;
   onBack: () => void;
-<<<<<<< stage-navigation
-  onVote: (destinationIds: string[]) => void;
+  onVote: (destinationId: string, removeVote?: boolean) => void;
   locked?: boolean;
   votedDestinationIds?: string[];
-=======
-  onVote: (destinationId: string, removeVote?: boolean) => void;
 }
 
 const VOTER_COLORS = ['#4A90D9', '#5C6AC4', '#2D9CDB', '#27AE60', '#E67E22', '#EB5757'];
@@ -86,7 +83,6 @@ function initialFromLabel(label: string): string {
 function colorFromUserId(userId: string): string {
   const hash = userId.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
   return VOTER_COLORS[hash % VOTER_COLORS.length];
->>>>>>> main
 }
 
 // ============================================
@@ -453,18 +449,7 @@ const DestinationCard: React.FC<DestinationCardProps> = ({
         )}
       </View>
 
-      {/* Vote Button */}
-<<<<<<< stage-navigation
-      <TouchableOpacity
-        style={[styles.voteButton, locked && !isVoted && styles.voteButtonLocked, isVoted && styles.voteButtonVoted]}
-        onPress={onVote}
-        disabled={locked}
-      >
-        <Text style={styles.voteButtonText}>
-          {locked
-            ? isVoted ? 'YOUR VOTE ✓' : 'VOTING CLOSED'
-            : isVoted ? 'SELECTED ✓' : 'CLICK TO VOTE'}
-=======
+      {/* Voter profiles */}
       <View style={styles.votersSection}>
         <Text style={styles.votersLabel}>
           {voterProfiles.length === 0
@@ -487,13 +472,21 @@ const DestinationCard: React.FC<DestinationCardProps> = ({
         )}
       </View>
 
+      {/* Vote Button */}
       <TouchableOpacity
-        style={[styles.voteButton, hasCurrentUserVoted && styles.removeVoteButton]}
+        style={[
+          styles.voteButton,
+          locked && !isVoted && styles.voteButtonLocked,
+          isVoted && styles.voteButtonVoted,
+          !locked && hasCurrentUserVoted && styles.removeVoteButton,
+        ]}
         onPress={onVote}
+        disabled={locked}
       >
-        <Text style={[styles.voteButtonText, hasCurrentUserVoted && styles.removeVoteButtonText]}>
-          {hasCurrentUserVoted ? 'REMOVE VOTE' : 'VOTE'}
->>>>>>> main
+        <Text style={[styles.voteButtonText, !locked && hasCurrentUserVoted && styles.removeVoteButtonText]}>
+          {locked
+            ? isVoted ? 'YOUR VOTE ✓' : 'VOTING CLOSED'
+            : hasCurrentUserVoted ? 'REMOVE VOTE' : 'VOTE'}
         </Text>
       </TouchableOpacity>
     </View>
@@ -529,8 +522,8 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
     }));
   });
 
-  // Selected destination ids before locking
-  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  // Selected destination ids before locking (kept for reference — per-card voting now used instead)
+  // const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
 
   // Modal state
   const [flightModalVisible, setFlightModalVisible] = useState(false);
@@ -606,18 +599,18 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
     });
   }, [destinations, users]);
 
-  // Toggle a destination's vote selection
-  const handleToggleVote = useCallback((destinationId: string) => {
-    setSelectedIds((prev) => {
-      const next = new Set(prev);
-      if (next.has(destinationId)) {
-        next.delete(destinationId);
-      } else {
-        next.add(destinationId);
-      }
-      return next;
-    });
-  }, []);
+  // Toggle a destination's vote selection (kept for reference — per-card voting now used instead)
+  // const handleToggleVote = useCallback((destinationId: string) => {
+  //   setSelectedIds((prev) => {
+  //     const next = new Set(prev);
+  //     if (next.has(destinationId)) {
+  //       next.delete(destinationId);
+  //     } else {
+  //       next.add(destinationId);
+  //     }
+  //     return next;
+  //   });
+  // }, []);
 
   // Handle flight selection
   const handleFlightSelect = useCallback((destinationId: string, flight: FlightOption) => {
@@ -651,29 +644,19 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
     setHotelModalVisible(true);
   }, []);
 
-  const canDone = !locked && selectedIds.size > 0;
+  // const canDone = !locked && selectedIds.size > 0;
 
   return (
     <View style={styles.container}>
       {/* Header */}
       <View style={styles.header}>
-        // disable back button when locked
         <TouchableOpacity onPress={onBack} style={styles.backButton} disabled={locked}>
           <Text style={[styles.backText, locked && styles.backTextDisabled]}>← Back</Text>
         </TouchableOpacity>
         <Text style={styles.headerTitle}>
           {locked ? 'VOTING CLOSED' : 'VOTE FOR YOUR DESTINATION!'}
         </Text>
-        {canDone ? (
-          <TouchableOpacity
-            style={styles.doneButton}
-            onPress={() => onVote(Array.from(selectedIds))}
-          >
-            <Text style={styles.doneButtonText}>DONE ({selectedIds.size})</Text>
-          </TouchableOpacity>
-        ) : (
-          <View style={styles.headerSpacer} />
-        )}
+        <View style={styles.headerSpacer} />
       </View>
 
       {/* Cards Container */}
@@ -682,25 +665,14 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
         showsHorizontalScrollIndicator={false}
         contentContainerStyle={styles.cardsContainer}
       >
-<<<<<<< stage-navigation
-        {destinationsWithSelections.map((destination) => (
-          <DestinationCard
-            key={destination.id}
-            destination={destination}
-            tripDetails={tripDetails}
-            onViewFlights={() => openFlightModal(destination)}
-            onViewHotels={() => openHotelModal(destination)}
-            onVote={() => handleToggleVote(destination.id)}
-            locked={locked}
-            isVoted={locked ? votedDestinationIds.includes(destination.id) : selectedIds.has(destination.id)}
-          />
-        ))}
-=======
         {destinationsWithSelections.map((destination) => {
           const voterProfiles = getVoterProfilesForDestination(destination.id);
           const hasCurrentUserVoted = Boolean(
             currentUserId && voterProfiles.some((profile) => profile.userId === currentUserId)
           );
+          const isVoted = locked
+            ? (votedDestinationIds || []).includes(destination.id)
+            : hasCurrentUserVoted;
 
           return (
             <DestinationCard
@@ -712,10 +684,11 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
               onViewFlights={() => openFlightModal(destination)}
               onViewHotels={() => openHotelModal(destination)}
               onVote={() => onVote(destination.id, hasCurrentUserVoted)}
+              locked={locked}
+              isVoted={isVoted}
             />
           );
         })}
->>>>>>> main
       </ScrollView>
 
       {/* Flight Modal */}
@@ -960,18 +933,16 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginTop: 8,
   },
-<<<<<<< stage-navigation
   voteButtonLocked: {
     backgroundColor: '#CBD5E1',
   },
   voteButtonVoted: {
     backgroundColor: '#16A34A',
-=======
+  },
   removeVoteButton: {
     backgroundColor: '#FFE9EC',
     borderWidth: 1,
     borderColor: '#E03D56',
->>>>>>> main
   },
   voteButtonText: {
     fontSize: 16,

@@ -3,7 +3,7 @@
  * Left sidebar panel for comparing destinations
  */
 
-import React from 'react';
+import React, { useRef, useEffect, useState } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, ScrollView } from 'react-native';
 import { CompareDestination } from '../types';
 
@@ -11,6 +11,7 @@ interface ComparePanelProps {
   destinations: CompareDestination[];
   onCompare: () => void;
   onRemoveDestination: (id: string) => void;
+  onDropDestination?: (dest: CompareDestination) => void;
   locked?: boolean;
 }
 
@@ -18,11 +19,47 @@ export const ComparePanel: React.FC<ComparePanelProps> = ({
   destinations,
   onCompare,
   onRemoveDestination,
+  onDropDestination,
   locked = false,
 }) => {
   const canCompare = destinations.length >= 2 && !locked;
+  const containerRef = useRef<View>(null);
+  const [isDragOver, setIsDragOver] = useState(false);
+
+  useEffect(() => {
+    const el = containerRef.current as any;
+    if (!el) return;
+
+    const handleDragOver = (e: DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(true);
+    };
+    const handleDragLeave = () => setIsDragOver(false);
+    const handleDrop = (e: DragEvent) => {
+      e.preventDefault();
+      setIsDragOver(false);
+      try {
+        const data = JSON.parse((e as any).dataTransfer?.getData('application/json') || '{}');
+        if (data.id && onDropDestination) {
+          onDropDestination(data as CompareDestination);
+        }
+      } catch {
+        // ignore malformed data
+      }
+    };
+
+    el.addEventListener('dragover', handleDragOver);
+    el.addEventListener('dragleave', handleDragLeave);
+    el.addEventListener('drop', handleDrop);
+    return () => {
+      el.removeEventListener('dragover', handleDragOver);
+      el.removeEventListener('dragleave', handleDragLeave);
+      el.removeEventListener('drop', handleDrop);
+    };
+  }, [onDropDestination]);
+
   return (
-    <View style={styles.container}>
+    <View ref={containerRef} style={[styles.container, isDragOver && styles.containerDragOver]}>
       <Text style={styles.title}>COMPARE</Text>
       <Text style={styles.subtitle}>Swipe right to remove</Text>
 
@@ -33,9 +70,11 @@ export const ComparePanel: React.FC<ComparePanelProps> = ({
       >
         <Text style={styles.compareButtonText}>CLICK TO COMPARE</Text>
       </TouchableOpacity>
-      
-      <View style={styles.dropZone}>
-        <Text style={styles.dropZoneText}>Drag a destination here</Text>
+
+      <View style={[styles.dropZone, isDragOver && styles.dropZoneActive]}>
+        <Text style={styles.dropZoneText}>
+          {isDragOver ? 'Release to add' : 'Drag a destination here'}
+        </Text>
       </View>
       
       <ScrollView style={styles.destinationList} nestedScrollEnabled>
@@ -84,6 +123,11 @@ const styles = StyleSheet.create({
     padding: 16,
     marginTop: 16,
   },
+  containerDragOver: {
+    borderWidth: 2,
+    borderColor: '#F5A623',
+    backgroundColor: '#FFF8EE',
+  },
   title: {
     fontSize: 14,
     fontWeight: '700',
@@ -121,6 +165,10 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     marginBottom: 12,
     backgroundColor: '#FFFFFF',
+  },
+  dropZoneActive: {
+    borderColor: '#F5A623',
+    backgroundColor: '#FFF8EE',
   },
   dropZoneText: {
     fontSize: 13,
