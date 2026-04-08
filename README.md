@@ -29,4 +29,4 @@ Frontend (`frontend/.env`):
 Backend:
 
 - `PORT` (optional, defaults to `3001`)
-- 'RAPIDAPI_KEY'
+- `RAPIDAPI_KEY`
