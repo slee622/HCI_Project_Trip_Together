@@ -14,7 +14,6 @@ const cors_1 = __importDefault(require("cors"));
 const recommendationRoutes_1 = __importDefault(require("./routes/recommendationRoutes"));
 const tripEstimateRoutes_1 = __importDefault(require("./routes/tripEstimateRoutes"));
 const travelRoutes_1 = __importDefault(require("./routes/travelRoutes"));
-const skyScrapperService_1 = require("./services/skyScrapperService");
 const app = (0, express_1.default)();
 const PORT = process.env.PORT || 3001;
 // Middleware
@@ -62,12 +61,11 @@ app.use((err, _req, res, _next) => {
 // Start server
 app.listen(PORT, () => {
     console.log(`🚀 Trip Together API server running on http://localhost:${PORT}`);
-    console.log(`   Sky Scrapper API: ${(0, skyScrapperService_1.isSkyScrappperConfigured)() ? '✅ Configured' : '⚠️  Not configured (using mock data)'}`);
     console.log(`   - POST /api/recommendations - Get destination recommendations`);
     console.log(`   - POST /api/trip-estimate - Get trip cost estimate`);
     console.log(`   - POST /api/trip-estimate/batch - Get batch cost estimates`);
-    console.log(`   - POST /api/travel/flights - Search flights (Sky Scrapper)`);
-    console.log(`   - POST /api/travel/hotels - Search hotels (Sky Scrapper)`);
+    console.log(`   - POST /api/travel/flights - Search flights (Flights Sky)`);
+    console.log(`   - POST /api/travel/hotels - Search hotels (Flights Sky)`);
     console.log(`   - POST /api/travel/search - Combined flight + hotel search`);
     console.log(`   - GET /api/health - Health check`);
 });

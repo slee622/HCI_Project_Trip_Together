@@ -56,3 +56,6 @@
 
 19. **2026-04-07: Trip collaboration also emits direct channel broadcasts**
     Planner write actions now send explicit Realtime channel broadcast events (`trip_preference_changed`, compare add/remove, vote add/remove) so teammate UI updates do not depend solely on Postgres publication event delivery timing. Postgres change listeners remain enabled as a secondary sync path.
+
+20. **2026-04-08: Removed unused Sky Scrapper backend service**
+    The backend no longer imports or logs Sky Scrapper service configuration because travel routes are wired to Flights Sky. This reduces confusion about active providers and removes dead code surface area.

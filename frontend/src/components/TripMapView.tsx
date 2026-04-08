@@ -99,13 +99,23 @@ const FitBounds: React.FC<{ recommendations: RecommendationWithEstimate[] }> = (
   recommendations,
 }) => {
   const map = useMap();
+  const initialFitDone = React.useRef(false);
 
   useEffect(() => {
-    if (recommendations.length > 0) {
-      const bounds = recommendations.map(
-        (r) => [r.latitude, r.longitude] as [number, number]
-      );
-      map.fitBounds(bounds, { padding: [50, 50] });
+    // Only fit bounds on initial load, not on every recommendation change
+    if (recommendations.length > 0 && !initialFitDone.current) {
+      initialFitDone.current = true;
+      // Delay to ensure map is fully initialized
+      setTimeout(() => {
+        try {
+          const bounds = recommendations.map(
+            (r) => [r.latitude, r.longitude] as [number, number]
+          );
+          map.fitBounds(bounds, { padding: [50, 50], animate: false });
+        } catch (e) {
+          console.warn('Failed to fit bounds:', e);
+        }
+      }, 100);
     }
   }, [recommendations, map]);
 
