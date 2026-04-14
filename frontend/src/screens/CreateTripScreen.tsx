@@ -126,6 +126,7 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
   const isCompact = width < 980;
   const isMobile = width < 620;
 
+  const [tripName, setTripName] = useState('');
   const [origin, setOrigin] = useState('');
   const [selectedOrigin, setSelectedOrigin] = useState<DestinationOption | null>(null);
   const [originFocused, setOriginFocused] = useState(false);
@@ -164,6 +165,7 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
   const dateRangeLabel = formatDateRange(departureDate, returnDate);
   const hasValidDates = Boolean(departureDate && returnDate && returnDate > departureDate);
   const canSubmit = Boolean(
+    tripName.trim() &&
     selectedOrigin &&
     hasValidDates &&
     !originOptionsLoading &&
@@ -261,10 +263,9 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
     setError(null);
 
     try {
-      const originLabel = `${selectedOrigin.city}, ${selectedOrigin.state}`;
       const normalizedOrigin = formatOriginOption(selectedOrigin);
-      const groupName = `${originLabel} Travel Group`;
-      const tripTitle = `${originLabel} Getaway`;
+      const groupName = tripName.trim();
+      const tripTitle = tripName.trim();
       const result = await createTripWithGroup({
         origin: normalizedOrigin,
         departureDate,
@@ -364,6 +365,20 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
           <Text style={[styles.subtitle, isCompact ? styles.subtitleCompact : null]}>
             GROUP TRAVEL PLANNER · VOTE · COMPARE · EXPLORE
           </Text>
+
+        <View style={styles.tripNameRow}>
+          <View style={[styles.fieldCard, styles.tripNameCard, tripName.trim() ? styles.completedCard : null]}>
+            <Text style={styles.fieldLabel}>TRIP NAME</Text>
+            <TextInput
+              style={[styles.fieldInput, styles.tripNameInput]}
+              value={tripName}
+              onChangeText={setTripName}
+              placeholder="e.g. Google Coworkers Trip"
+              autoCapitalize="words"
+              autoCorrect={false}
+            />
+          </View>
+        </View>
 
         <View style={styles.fieldsRow}>
           <View style={[styles.fieldCard, selectedOrigin ? styles.completedCard : null]}>
@@ -709,8 +724,23 @@ const styles = StyleSheet.create({
   subtitleCompact: {
     fontSize: 22,
   },
-  fieldsRow: {
+  tripNameRow: {
     marginTop: 42,
+    width: '100%',
+    maxWidth: 1120,
+    alignItems: 'stretch',
+  },
+  tripNameCard: {
+    width: '100%',
+    minHeight: 58,
+    paddingVertical: 8,
+  },
+  tripNameInput: {
+    fontSize: 20,
+    marginTop: 4,
+  },
+  fieldsRow: {
+    marginTop: 16,
     width: '100%',
     maxWidth: 1120,
     flexDirection: 'row',
