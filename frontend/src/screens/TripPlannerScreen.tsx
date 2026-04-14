@@ -365,6 +365,18 @@ function buildPreferenceMarkerByDimension(
   return markersByDimension;
 }
 
+function buildFallbackGroupMember(userId: string): StartupGroupMember {
+  const shortId = userId.slice(0, 8);
+  return {
+    userId,
+    role: 'member',
+    joinedAt: new Date().toISOString(),
+    handle: `member_${shortId}`,
+    displayName: `Member ${shortId}`,
+    avatarUrl: null,
+  };
+}
+
 export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   onSignOut,
   onBack,
@@ -409,19 +421,22 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   const [livePreferences, setLivePreferences] = useState<StartupPreference[]>(
     scopedStartupState?.preferences || []
   );
+  const [groupMembers, setGroupMembers] = useState<StartupGroupMember[]>(
+    scopedStartupState?.groupMembers || []
+  );
   const [votes, setVotes] = useState<StartupVote[]>(scopedStartupState?.votes || []);
   const compareUsers = useMemo(
-    () => mapGroupMembersToCompareUsers(scopedStartupState?.groupMembers || []),
-    [scopedStartupState?.groupMembers]
+    () => mapGroupMembersToCompareUsers(groupMembers),
+    [groupMembers]
   );
   const memberPreferenceMarkers = useMemo(
     () =>
       buildPreferenceMarkerByDimension(
-        scopedStartupState?.groupMembers || [],
+        groupMembers,
         livePreferences,
         currentUserId
       ),
-    [scopedStartupState?.groupMembers, livePreferences, currentUserId]
+    [groupMembers, livePreferences, currentUserId]
   );
   const tripRealtimeChannelRef = useRef<RealtimeChannel | null>(null);
 
@@ -478,6 +493,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       setRecommendations([]);
       setSelectedDestinationId(null);
       setLivePreferences([]);
+      setGroupMembers([]);
       setVotes([]);
       skipNextAutoFetchRef.current = false;
       return;
@@ -487,6 +503,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     setRecommendations(mapStartupRecommendations(scopedStartupState.recommendations));
     setSelectedDestinationId(scopedStartupState.selectedOption?.destinationId || null);
     setLivePreferences(scopedStartupState.preferences || []);
+    setGroupMembers(scopedStartupState.groupMembers || []);
     setVotes(scopedStartupState.votes || []);
 
     skipNextAutoFetchRef.current = (scopedStartupState.recommendations || []).length > 0;
@@ -524,6 +541,18 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       });
   }, [tripSessionId]);
 
+  const ensureGroupMember = useCallback((userId: string): void => {
+    if (!userId) return;
+    if (currentUserId && userId === currentUserId) return;
+
+    setGroupMembers((prev) => {
+      if (prev.some((member) => member.userId === userId)) {
+        return prev;
+      }
+      return [...prev, buildFallbackGroupMember(userId)];
+    });
+  }, [currentUserId]);
+
   const upsertLivePreference = useCallback((row: TripPreferenceRealtimeRow): void => {
     const mapped: StartupPreference = {
       userId: row.user_id,
@@ -534,6 +563,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       focus: clampPreference(row.focus),
       updatedAt: row.updated_at,
     };
+    ensureGroupMember(mapped.userId);
 
     setLivePreferences((prev) => {
       const index = prev.findIndex((item) => item.userId === mapped.userId);
@@ -544,7 +574,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       next[index] = mapped;
       return next;
     });
-  }, []);
+  }, [ensureGroupMember]);
 
   const applyRealtimeVote = useCallback((
     row: TripVoteRealtimeRow,
@@ -558,6 +588,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       );
       return;
     }
+    ensureGroupMember(row.user_id);
 
     const mapped: StartupVote = {
       destinationId: row.destination_id,
@@ -577,7 +608,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       next[index] = mapped;
       return next;
     });
-  }, []);
+  }, [ensureGroupMember]);
 
   const broadcastTripEvent = useCallback(async (
     event: string,
@@ -1032,7 +1063,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
             travelers: activeTrip.travelers,
           }}
           users={compareUsers}
-          voteMembers={scopedStartupState?.groupMembers || []}
+          voteMembers={groupMembers}
           votes={votes}
           currentUserId={currentUserId}
           onBack={() => setStage('preferences')}
