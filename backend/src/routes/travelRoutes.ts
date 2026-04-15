@@ -8,6 +8,7 @@ import {
   searchFlights as searchFlightsAPI,
   searchHotels as searchHotelsAPI,
   isFlightsSkyConfigured,
+  isFlightsSkyAvailable,
 } from '../services/flightsSkyService';
 import {
   searchFlights as searchFlightsMock,
@@ -23,7 +24,8 @@ const router = Router();
 router.get('/status', (_req: Request, res: Response) => {
   res.json({
     configured: isFlightsSkyConfigured(),
-    provider: isFlightsSkyConfigured() ? 'flights-sky' : 'mock',
+    provider: isFlightsSkyAvailable() ? 'flights-sky' : 'mock',
+    available: isFlightsSkyAvailable(),
   });
 });
 

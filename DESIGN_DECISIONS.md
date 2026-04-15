@@ -59,3 +59,12 @@
 
 20. **2026-04-08: Removed unused Sky Scrapper backend service**
     The backend no longer imports or logs Sky Scrapper service configuration because travel routes are wired to Flights Sky. This reduces confusion about active providers and removes dead code surface area.
+
+21. **2026-04-14: RapidAPI rate limits fall back to mock travel data**
+    Flights Sky requests now treat HTTP 429 as a temporary outage, disable live calls for a short cooldown window, and fall back to mock results. This keeps the travel planner responsive when RapidAPI quotas are exhausted and avoids repeated error spam during a rate-limit window.
+
+22. **2026-04-14: Map markers are draggable for direct editing**
+    Destination markers on the interactive map are now draggable on web, and the new coordinates are propagated back into planner state so users can reposition destinations without leaving the map. This addresses the usability concern about immutable map pins and makes the map actionable instead of read-only.
+
+23. **2026-04-14: Airport fallback searches for nearby airports when destination lacks one**
+    The `searchAirport()` function now performs a secondary search for nearby airports when the initial query returns a non-airport result (city, town, etc.). When searching "[city] airport" returns an airport result, that airport is used for flight search instead of falling back to a non-airport entity. If no nearby airport is found, the city/town result is used as-is, allowing flight searches to fail gracefully if Flights Sky has no airport mappings for that region.

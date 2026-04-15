@@ -5,6 +5,7 @@
  */
 import { FlightSearchResult } from '../types';
 export declare function isFlightsSkyConfigured(): boolean;
+export declare function isFlightsSkyAvailable(): boolean;
 interface FlightsSkyEntity {
     entityId: string;
     skyId: string;
@@ -14,6 +15,7 @@ interface FlightsSkyEntity {
 }
 /**
  * Search for airport/location entity ID by query (city name or airport code)
+ * Falls back to nearby airports if initial search returns a city, not an airport
  */
 export declare function searchAirport(query: string): Promise<FlightsSkyEntity | null>;
 /**

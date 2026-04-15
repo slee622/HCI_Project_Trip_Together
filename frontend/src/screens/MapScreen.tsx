@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { RecommendationWithEstimate } from '../types';
 import { DestinationCard } from '../components/DestinationCard';
+import { reverseGeocodeLocation } from '../services/locationLookup';
 
 // Leaflet imports (web only)
 let MapContainer: any;
@@ -45,6 +46,7 @@ interface MapScreenProps {
   recommendations: RecommendationWithEstimate[];
   selectedDestinationId?: string;
   onSelectDestination?: (id: string | null) => void;
+  onMoveDestination?: (id: string, latitude: number, longitude: number) => void;
   loading?: boolean;
 }
 
@@ -93,6 +95,7 @@ export const MapScreen: React.FC<MapScreenProps> = ({
   recommendations,
   selectedDestinationId,
   onSelectDestination,
+  onMoveDestination,
   loading = false,
 }) => {
   const [selectedDestination, setSelectedDestination] = useState<RecommendationWithEstimate | null>(
@@ -100,9 +103,14 @@ export const MapScreen: React.FC<MapScreenProps> = ({
       ? recommendations.find(r => r.id === selectedDestinationId) || null 
       : null
   );
+  const [editableRecommendations, setEditableRecommendations] = useState<RecommendationWithEstimate[]>(recommendations);
   const [cssLoaded, setCssLoaded] = useState(false);
 
   // Load Leaflet CSS
+  useEffect(() => {
+    setEditableRecommendations(recommendations);
+  }, [recommendations]);
+
   useEffect(() => {
     if (Platform.OS === 'web' && !cssLoaded) {
       const link = document.createElement('link');
@@ -121,6 +129,40 @@ export const MapScreen: React.FC<MapScreenProps> = ({
   const handleClose = () => {
     setSelectedDestination(null);
     onSelectDestination?.(null);
+  };
+
+  const handleMoveDestination = async (id: string, latitude: number, longitude: number) => {
+    const resolvedLocation = await reverseGeocodeLocation(latitude, longitude);
+
+    setEditableRecommendations((prev) =>
+      prev.map((destination) =>
+        destination.id === id
+          ? {
+              ...destination,
+              latitude,
+              longitude,
+              city: resolvedLocation?.city || destination.city,
+              state: resolvedLocation?.state || destination.state,
+            }
+          : destination
+      )
+    );
+
+    if (selectedDestination?.id === id) {
+      setSelectedDestination((current) =>
+        current
+          ? {
+              ...current,
+              latitude,
+              longitude,
+              city: resolvedLocation?.city || current.city,
+              state: resolvedLocation?.state || current.state,
+            }
+          : current
+      );
+    }
+
+    onMoveDestination?.(id, latitude, longitude);
   };
 
   if (loading) {
@@ -167,13 +209,19 @@ export const MapScreen: React.FC<MapScreenProps> = ({
         />
         <FitBounds recommendations={recommendations} />
         
-        {recommendations.map((dest, index) => (
+        {editableRecommendations.map((dest, index) => (
           <Marker
             key={dest.id}
             position={[dest.latitude, dest.longitude]}
             icon={createCustomIcon(dest.score, index + 1)}
+            draggable={true}
             eventHandlers={{
               click: () => handleSelect(dest),
+              dragend: (event: any) => {
+                const marker = event.target;
+                const position = marker.getLatLng();
+                handleMoveDestination(dest.id, position.lat, position.lng);
+              },
             }}
           >
             <Popup>
@@ -184,6 +232,9 @@ export const MapScreen: React.FC<MapScreenProps> = ({
                 </div>
                 <div style={{ fontSize: 12, color: '#666', marginTop: 4 }}>
                   {dest.reason}
+                </div>
+                <div style={{ fontSize: 12, color: '#2563EB', marginTop: 6, fontWeight: 600 }}>
+                  Drag marker to edit location
                 </div>
                 {dest.estimate && (
                   <div style={{ fontSize: 12, color: '#333', marginTop: 8 }}>
