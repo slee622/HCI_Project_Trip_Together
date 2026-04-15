@@ -373,8 +373,8 @@ export const CreateTripScreen: React.FC<CreateTripScreenProps> = ({
               style={[styles.fieldInput, styles.tripNameInput]}
               value={tripName}
               onChangeText={setTripName}
-              placeholder="e.g. Google Coworkers Trip"
-              autoCapitalize="words"
+              placeholder="Enter Trip Name e.g. Google Coworkers Trip"
+              autoCapitalize="none"
               autoCorrect={false}
             />
           </View>
@@ -727,7 +727,7 @@ const styles = StyleSheet.create({
   tripNameRow: {
     marginTop: 42,
     width: '100%',
-    maxWidth: 1120,
+    maxWidth: 1050,
     alignItems: 'stretch',
   },
   tripNameCard: {
