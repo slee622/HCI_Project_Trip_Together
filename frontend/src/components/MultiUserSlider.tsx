@@ -36,6 +36,10 @@ export const PreferenceSlider: React.FC<PreferenceSliderProps> = ({
 }) => {
   const [isDragging, setIsDragging] = useState(false);
   const trackRef = useRef<HTMLDivElement>(null);
+  // Keep a stable ref to the latest onChange so the drag effect never needs
+  // to re-subscribe just because the parent re-rendered with a new callback.
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
 
   const getPositionPercent = (val: number) => (val / 10) * 100;
 
@@ -49,7 +53,7 @@ export const PreferenceSlider: React.FC<PreferenceSliderProps> = ({
       const x = e.clientX - rect.left;
       const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
       const newValue = Math.round((percent / 100) * 10);
-      onChange(newValue);
+      onChangeRef.current(newValue);
     };
 
     const handleMouseUp = () => {
@@ -63,22 +67,22 @@ export const PreferenceSlider: React.FC<PreferenceSliderProps> = ({
       document.removeEventListener('mousemove', handleMouseMove);
       document.removeEventListener('mouseup', handleMouseUp);
     };
-  }, [isDragging, onChange]);
+  }, [isDragging]); // onChange intentionally omitted — accessed via onChangeRef
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (disabled) return;
     e.preventDefault();
     setIsDragging(true);
-    
+
     // Also update value on click
     if (trackRef.current) {
       const rect = trackRef.current.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const percent = Math.max(0, Math.min(100, (x / rect.width) * 100));
       const newValue = Math.round((percent / 100) * 10);
-      onChange(newValue);
+      onChangeRef.current(newValue);
     }
-  }, [disabled, onChange]);
+  }, [disabled]); // onChange intentionally omitted — accessed via onChangeRef
 
   if (Platform.OS === 'web') {
     return (
