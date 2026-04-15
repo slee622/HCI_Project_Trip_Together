@@ -15,7 +15,8 @@ const router = (0, express_1.Router)();
 router.get('/status', (_req, res) => {
     res.json({
         configured: (0, flightsSkyService_1.isFlightsSkyConfigured)(),
-        provider: (0, flightsSkyService_1.isFlightsSkyConfigured)() ? 'flights-sky' : 'mock',
+        provider: (0, flightsSkyService_1.isFlightsSkyAvailable)() ? 'flights-sky' : 'mock',
+        available: (0, flightsSkyService_1.isFlightsSkyAvailable)(),
     });
 });
 /**

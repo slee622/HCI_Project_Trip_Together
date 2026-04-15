@@ -16,6 +16,7 @@ import {
   userPrefsToGroupPrefs,
 } from '../types';
 import { getRecommendationsWithEstimates } from '../services/api';
+import { reverseGeocodeLocation } from '../services/locationLookup';
 import { Header } from '../components/Header';
 import { PreferencesPanel } from '../components/PreferencesPanel';
 import { ComparePanel } from '../components/ComparePanel';
@@ -441,7 +442,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   const tripRealtimeChannelRef = useRef<RealtimeChannel | null>(null);
 
   // Debounce timer ref
-  const debounceRef = useRef<NodeJS.Timeout | null>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Fetch recommendations
   const fetchRecommendations = useCallback(async (prefs: UserPreferences) => {
@@ -472,6 +473,45 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       setLoading(false);
     }
   }, [activeTrip, tripSessionId]);
+
+  const handleMoveRecommendation = useCallback(async (id: string, latitude: number, longitude: number) => {
+    const resolvedLocation = await reverseGeocodeLocation(latitude, longitude);
+
+    setRecommendations((prev) => {
+      const next = prev.map((destination) =>
+        destination.id === id
+          ? {
+              ...destination,
+              latitude,
+              longitude,
+              city: resolvedLocation?.city || destination.city,
+              state: resolvedLocation?.state || destination.state,
+            }
+          : destination
+      );
+
+      if (tripSessionId) {
+        saveTripRecommendations(tripSessionId, next).catch((persistError) => {
+          console.warn('Failed to persist moved destination:', persistError);
+        });
+      }
+
+      return next;
+    });
+
+    setSelectedDestinationId((current) => (current === id ? id : current));
+    setCompareList((prev) =>
+      prev.map((destination) =>
+        destination.id === id
+          ? {
+              ...destination,
+              city: resolvedLocation?.city || destination.city,
+              state: resolvedLocation?.state || destination.state,
+            }
+          : destination
+      )
+    );
+  }, [tripSessionId]);
 
   // Load recommendations on mount / preference change.
   useEffect(() => {
@@ -1045,6 +1085,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
               selectedDestinationId={selectedDestinationId}
               onSelectDestination={setSelectedDestinationId}
               onAddToCompare={handleAddToCompare}
+              onMoveDestination={handleMoveRecommendation}
               isInCompareList={isInCompareList}
               loading={loading}
             />

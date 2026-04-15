@@ -39,6 +39,7 @@ interface TripMapViewProps {
   selectedDestinationId?: string | null;
   onSelectDestination?: (id: string | null) => void;
   onAddToCompare?: (dest: RecommendationWithEstimate) => void;
+  onMoveDestination?: (id: string, latitude: number, longitude: number) => void;
   isInCompareList?: (id: string) => boolean;
   loading?: boolean;
 }
@@ -127,6 +128,7 @@ const MapPopupContent: React.FC<{
   dest: RecommendationWithEstimate;
   isInCompare: boolean;
   onToggleCompare: () => void;
+  isEditable?: boolean;
 }> = ({ dest, isInCompare, onToggleCompare }) => {
   const category = dest.reason.split('.')[0] || 'Destination';
   const priceRange = dest.estimate
@@ -155,6 +157,15 @@ const MapPopupContent: React.FC<{
     React.createElement('div', { key: 'price', style: { fontSize: 13, color: '#666', marginBottom: 12 } }, 
       priceRange
     ),
+    React.createElement('div', {
+      key: 'hint',
+      style: {
+        fontSize: 12,
+        color: '#2563EB',
+        marginBottom: 12,
+        fontWeight: 600,
+      },
+    }, 'Drag the pin to adjust this destination'),
     React.createElement('label', { 
       key: 'compare', 
       style: { 
@@ -183,6 +194,7 @@ export const TripMapView: React.FC<TripMapViewProps> = ({
   selectedDestinationId,
   onSelectDestination,
   onAddToCompare,
+  onMoveDestination,
   isInCompareList = () => false,
   loading = false,
 }) => {
@@ -265,8 +277,14 @@ export const TripMapView: React.FC<TripMapViewProps> = ({
             key={dest.id}
             position={[dest.latitude, dest.longitude]}
             icon={dest.id === selectedDestinationId ? selectedPinIcon : pinIcon}
+            draggable={true}
             eventHandlers={{
               click: () => onSelectDestination?.(dest.id),
+              dragend: (event: any) => {
+                const marker = event.target;
+                const position = marker.getLatLng();
+                onMoveDestination?.(dest.id, position.lat, position.lng);
+              },
             }}
           >
             <Popup>
