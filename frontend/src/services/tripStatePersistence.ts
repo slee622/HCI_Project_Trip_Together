@@ -11,6 +11,15 @@ interface PersistedRecommendation {
   reason: string;
 }
 
+export interface PersistedTripMapMarker {
+  markerId: string;
+  sourceDestinationId?: string | null;
+  city: string;
+  state: string;
+  latitude: number;
+  longitude: number;
+}
+
 function assertConfig(): void {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY');
@@ -170,6 +179,26 @@ export async function removeCompareDestination(
     {
       p_trip_session_id: tripSessionId,
       p_destination_id: destinationId,
+    },
+    session
+  );
+}
+
+export async function saveTripMapMarker(
+  tripSessionId: string,
+  marker: PersistedTripMapMarker
+): Promise<void> {
+  const session = await requireSession();
+  await callRpc<null>(
+    'upsert_trip_map_marker',
+    {
+      p_trip_session_id: tripSessionId,
+      p_marker_id: marker.markerId,
+      p_latitude: marker.latitude,
+      p_longitude: marker.longitude,
+      p_city: marker.city,
+      p_state: marker.state,
+      p_source_destination_id: marker.sourceDestinationId ?? null,
     },
     session
   );

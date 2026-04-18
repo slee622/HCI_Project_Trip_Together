@@ -68,3 +68,6 @@
 
 23. **2026-04-14: Airport fallback searches for nearby airports when destination lacks one**
     The `searchAirport()` function now performs a secondary search for nearby airports when the initial query returns a non-airport result (city, town, etc.). When searching "[city] airport" returns an airport result, that airport is used for flight search instead of falling back to a non-airport entity. If no nearby airport is found, the city/town result is used as-is, allowing flight searches to fail gracefully if Flights Sky has no airport mappings for that region.
+
+24. **2026-04-17: Trip map markers persist as collaborative trip state**
+    Marker coordinates now persist in a dedicated `trip_map_markers` table (instead of local-only UI state), with trip-scoped RPCs for upsert/list and Supabase Realtime publication enabled for websocket sync. Destination markers use their destination id as marker id for stable coordinate overrides, and users can also add custom markers with generated ids so non-catalog locations can be shared and moved collaboratively across all trip members.
