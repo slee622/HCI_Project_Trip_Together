@@ -74,3 +74,6 @@
 
 25. **2026-04-20: Compare labels use canonical destination data, not map-marker overrides**
     Planner compare entries now keep city/state labels from persisted destination records (`trip_compare_destinations` + `destinations`) and ignore legacy `trip_map_markers` rows tied to `source_destination_id`. Marker syncing is treated as custom-marker-only state so stale recommendation-marker geocode rows cannot randomly rename compare options across reloads.
+
+26. **2026-04-20: Custom marker compare selections persist in a dedicated trip-scoped table**
+    Compare entries for user-added markers now persist via `trip_custom_compare_markers` with dedicated RPCs, instead of broadcast-only local state. This keeps custom compare choices stable across reloads and sessions while preserving destination-compare persistence in `trip_compare_destinations`.

@@ -184,6 +184,36 @@ export async function removeCompareDestination(
   );
 }
 
+export async function saveCustomCompareMarker(
+  tripSessionId: string,
+  markerId: string
+): Promise<void> {
+  const session = await requireSession();
+  await callRpc<null>(
+    'upsert_trip_custom_compare_marker',
+    {
+      p_trip_session_id: tripSessionId,
+      p_marker_id: markerId,
+    },
+    session
+  );
+}
+
+export async function removeCustomCompareMarker(
+  tripSessionId: string,
+  markerId: string
+): Promise<void> {
+  const session = await requireSession();
+  await callRpc<null>(
+    'remove_trip_custom_compare_marker',
+    {
+      p_trip_session_id: tripSessionId,
+      p_marker_id: markerId,
+    },
+    session
+  );
+}
+
 export async function saveTripMapMarker(
   tripSessionId: string,
   marker: PersistedTripMapMarker

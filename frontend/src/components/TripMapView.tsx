@@ -155,6 +155,8 @@ const MapPopupContent: React.FC<{
     id: dest.id,
     city: dest.city,
     state: dest.state,
+    latitude: dest.latitude,
+    longitude: dest.longitude,
     category,
     priceRange,
   });
@@ -227,6 +229,8 @@ const CustomMapPopupContent: React.FC<{
     id: marker.id,
     city: marker.city,
     state: marker.state,
+    latitude: marker.latitude,
+    longitude: marker.longitude,
     category,
     priceRange,
   });
