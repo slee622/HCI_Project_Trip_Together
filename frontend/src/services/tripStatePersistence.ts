@@ -203,3 +203,18 @@ export async function saveTripMapMarker(
     session
   );
 }
+
+export async function removeTripMapMarker(
+  tripSessionId: string,
+  markerId: string
+): Promise<void> {
+  const session = await requireSession();
+  await callRpc<null>(
+    'remove_trip_map_marker',
+    {
+      p_trip_session_id: tripSessionId,
+      p_marker_id: markerId,
+    },
+    session
+  );
+}

@@ -36,6 +36,7 @@ import {
   StartupVote,
 } from '../services/startupState';
 import {
+  removeTripMapMarker,
   removeTripVote,
   removeCompareDestination,
   saveCompareDestination,
@@ -245,6 +246,7 @@ interface TripCompareBroadcastPayload {
 
 interface TripMapMarkerBroadcastPayload {
   marker?: StartupTripMapMarker;
+  markerId?: string;
 }
 
 interface TripPlannerScreenProps {
@@ -579,21 +581,41 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     );
   }, []);
 
+  const removeTripMapMarkerLocal = useCallback((markerId: string): void => {
+    setTripMapMarkers((prev) => prev.filter((item) => item.markerId !== markerId));
+    if (!isCustomMarkerId(markerId)) {
+      return;
+    }
+    setCompareList((prev) => prev.filter((destination) => destination.id !== markerId));
+  }, []);
+
   const loadTripMapMarkers = useCallback(() => {
     if (!tripSessionId) return;
     return listTripMapMarkers(tripSessionId)
       .then((items) => {
         setTripMapMarkers(items);
+        const itemBySource = new Map(
+          items
+            .filter((item) => item.sourceDestinationId)
+            .map((item) => [item.sourceDestinationId as string, item])
+        );
+        const customMarkerIds = new Set(
+          items
+            .filter((item) => !item.sourceDestinationId)
+            .map((item) => item.markerId)
+        );
         setCompareList((prev) =>
-          prev.map((destination) => {
-            const marker = items.find((item) => item.sourceDestinationId === destination.id);
-            if (!marker) return destination;
-            return {
-              ...destination,
-              city: marker.city,
-              state: marker.state,
-            };
-          })
+          prev
+            .filter((destination) => !isCustomMarkerId(destination.id) || customMarkerIds.has(destination.id))
+            .map((destination) => {
+              const marker = itemBySource.get(destination.id);
+              if (!marker) return destination;
+              return {
+                ...destination,
+                city: marker.city,
+                state: marker.state,
+              };
+            })
         );
       })
       .catch((error) => {
@@ -847,6 +869,16 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
           )
           .on(
             'broadcast',
+            { event: 'trip_map_marker_removed' },
+            ({ payload }) => {
+              if (!active) return;
+              const data = payload as TripMapMarkerBroadcastPayload;
+              if (!data.markerId) return;
+              removeTripMapMarkerLocal(data.markerId);
+            }
+          )
+          .on(
+            'broadcast',
             { event: 'trip_vote_changed' },
             ({ payload }) => {
               if (!active) return;
@@ -981,6 +1013,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     loadTripMapMarkers,
     upsertLivePreference,
     upsertTripMapMarkerLocal,
+    removeTripMapMarkerLocal,
     applyRealtimeVote,
   ]);
 
@@ -1144,6 +1177,30 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     tripSessionId,
     upsertTripMapMarkerLocal,
     broadcastTripEvent,
+  ]);
+
+  const handleDeleteCustomMarker = useCallback((markerId: string) => {
+    removeTripMapMarkerLocal(markerId);
+
+    if (!tripSessionId) {
+      return;
+    }
+
+    removeTripMapMarker(tripSessionId, markerId)
+      .then(() =>
+        broadcastTripEvent('trip_map_marker_removed', {
+          markerId,
+        })
+      )
+      .catch((error) => {
+        console.warn('Failed to delete custom marker:', error);
+        void loadTripMapMarkers();
+      });
+  }, [
+    tripSessionId,
+    removeTripMapMarkerLocal,
+    broadcastTripEvent,
+    loadTripMapMarkers,
   ]);
 
   // Add destination to compare list
@@ -1375,6 +1432,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
               onAddCustomToCompare={handleAddCustomToCompare}
               onAddCustomMarker={handleAddCustomMarker}
               onMoveCustomMarker={handleMoveCustomMarker}
+              onDeleteCustomMarker={handleDeleteCustomMarker}
               isInCompareList={isInCompareList}
               loading={loading}
             />

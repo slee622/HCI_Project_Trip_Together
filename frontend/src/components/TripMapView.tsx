@@ -45,6 +45,7 @@ interface TripMapViewProps {
   onAddCustomToCompare?: (marker: CustomMapMarker) => void;
   onAddCustomMarker?: (latitude: number, longitude: number) => void;
   onMoveCustomMarker?: (id: string, latitude: number, longitude: number) => void;
+  onDeleteCustomMarker?: (id: string) => void;
   isInCompareList?: (id: string) => boolean;
   loading?: boolean;
 }
@@ -216,7 +217,8 @@ const CustomMapPopupContent: React.FC<{
   marker: CustomMapMarker;
   isInCompare: boolean;
   onToggleCompare: () => void;
-}> = ({ marker, isInCompare, onToggleCompare }) => {
+  onDelete: () => void;
+}> = ({ marker, isInCompare, onToggleCompare, onDelete }) => {
   const category = 'Custom location';
   const priceRange = 'Price TBD';
   const description = 'Added custom location marker for your group trip.';
@@ -282,6 +284,27 @@ const CustomMapPopupContent: React.FC<{
       }),
       'Add to Compare',
     ]),
+    React.createElement(
+      'button',
+      {
+        key: 'delete',
+        type: 'button',
+        onClick: onDelete,
+        style: {
+          marginTop: 10,
+          width: '100%',
+          backgroundColor: '#EF4444',
+          border: 'none',
+          borderRadius: 6,
+          color: '#FFFFFF',
+          fontSize: 12,
+          fontWeight: 700,
+          padding: '7px 8px',
+          cursor: 'pointer',
+        },
+      },
+      'Delete Custom Marker'
+    ),
   ]);
 };
 
@@ -294,6 +317,7 @@ export const TripMapView: React.FC<TripMapViewProps> = ({
   onAddCustomToCompare,
   onAddCustomMarker,
   onMoveCustomMarker,
+  onDeleteCustomMarker,
   isInCompareList = () => false,
   loading = false,
 }) => {
@@ -417,6 +441,7 @@ export const TripMapView: React.FC<TripMapViewProps> = ({
                 marker={marker}
                 isInCompare={isInCompareList(marker.id)}
                 onToggleCompare={() => onAddCustomToCompare?.(marker)}
+                onDelete={() => onDeleteCustomMarker?.(marker.id)}
               />
             </Popup>
           </Marker>
