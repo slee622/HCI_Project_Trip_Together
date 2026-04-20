@@ -390,6 +390,10 @@ function generateCustomMarkerId(): string {
   return `custom-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
 
+function isCustomMarkerId(id: string): boolean {
+  return id.startsWith('custom-');
+}
+
 export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   onSignOut,
   onBack,
@@ -490,10 +494,6 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
           longitude: marker.longitude,
         })),
     [tripMapMarkers]
-  );
-  const recommendationById = useMemo(
-    () => new Map(mapRecommendations.map((destination) => [destination.id, destination])),
-    [mapRecommendations]
   );
   const tripRealtimeChannelRef = useRef<RealtimeChannel | null>(null);
 
@@ -601,75 +601,6 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       });
   }, [tripSessionId]);
 
-  const handleMoveRecommendation = useCallback(async (id: string, latitude: number, longitude: number) => {
-    const baseDestination = recommendationById.get(id);
-    if (!baseDestination) {
-      return;
-    }
-
-    const nowIso = new Date().toISOString();
-    const optimisticMarker: StartupTripMapMarker = {
-      markerId: id,
-      sourceDestinationId: id,
-      city: baseDestination.city,
-      state: baseDestination.state,
-      latitude,
-      longitude,
-      addedBy: currentUserId || '',
-      createdAt: nowIso,
-      updatedAt: nowIso,
-    };
-
-    upsertTripMapMarkerLocal(optimisticMarker);
-
-    if (tripSessionId) {
-      saveTripMapMarker(tripSessionId, {
-        markerId: optimisticMarker.markerId,
-        sourceDestinationId: optimisticMarker.sourceDestinationId,
-        city: optimisticMarker.city,
-        state: optimisticMarker.state,
-        latitude: optimisticMarker.latitude,
-        longitude: optimisticMarker.longitude,
-      })
-        .then(() => broadcastTripEvent('trip_map_marker_upserted', { marker: optimisticMarker }))
-        .catch((persistError) => {
-          console.warn('Failed to persist moved destination marker:', persistError);
-        });
-    }
-
-    const resolvedLocation = await reverseGeocodeLocation(latitude, longitude);
-    const finalMarker: StartupTripMapMarker = {
-      ...optimisticMarker,
-      city: resolvedLocation?.city || optimisticMarker.city,
-      state: resolvedLocation?.state || optimisticMarker.state,
-      updatedAt: new Date().toISOString(),
-    };
-    upsertTripMapMarkerLocal(finalMarker);
-
-    if (tripSessionId) {
-      saveTripMapMarker(tripSessionId, {
-        markerId: finalMarker.markerId,
-        sourceDestinationId: finalMarker.sourceDestinationId,
-        city: finalMarker.city,
-        state: finalMarker.state,
-        latitude: finalMarker.latitude,
-        longitude: finalMarker.longitude,
-      })
-        .then(() => broadcastTripEvent('trip_map_marker_upserted', { marker: finalMarker }))
-        .catch((persistError) => {
-          console.warn('Failed to persist geocoded destination marker:', persistError);
-        });
-    }
-
-    setSelectedDestinationId((current) => (current === id ? id : current));
-  }, [
-    tripSessionId,
-    recommendationById,
-    currentUserId,
-    upsertTripMapMarkerLocal,
-    broadcastTripEvent,
-  ]);
-
   // Load recommendations on mount / preference change.
   useEffect(() => {
     if (skipNextAutoFetchRef.current) {
@@ -688,7 +619,6 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     if (!scopedStartupState?.tripSession) {
       setPreferences(DEFAULT_PREFERENCES);
       setRecommendations([]);
-      setTripMapMarkers([]);
       setSelectedDestinationId(null);
       setLivePreferences([]);
       setGroupMembers([]);
@@ -703,7 +633,6 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     setLivePreferences(scopedStartupState.preferences || []);
     setGroupMembers(scopedStartupState.groupMembers || []);
     setVotes(scopedStartupState.votes || []);
-    setTripMapMarkers([]);
 
     skipNextAutoFetchRef.current = (scopedStartupState.recommendations || []).length > 0;
   }, [tripSessionId, scopedStartupState, currentUserId]);
@@ -735,6 +664,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       return;
     }
 
+    setTripMapMarkers([]);
     loadTripMapMarkers();
   }, [tripSessionId, loadTripMapMarkers]);
 
@@ -1245,10 +1175,31 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     }
   }, [tripSessionId, broadcastTripEvent]);
 
+  const handleAddCustomToCompare = useCallback((marker: CustomMapMarker) => {
+    const compareDestination: CompareDestination = {
+      id: marker.id,
+      city: marker.city,
+      state: marker.state,
+      category: 'Custom location',
+      priceRange: 'Price TBD',
+    };
+
+    setCompareList((prev) => {
+      if (prev.some((d) => d.id === marker.id)) return prev;
+      return [...prev, compareDestination];
+    });
+
+    if (tripSessionId) {
+      void broadcastTripEvent('trip_compare_added', {
+        destination: compareDestination,
+      });
+    }
+  }, [tripSessionId, broadcastTripEvent]);
+
   // Remove destination from compare list
   const handleRemoveFromCompare = useCallback((id: string) => {
     setCompareList((prev) => prev.filter((d) => d.id !== id));
-    if (tripSessionId) {
+    if (tripSessionId && !isCustomMarkerId(id)) {
       removeCompareDestination(tripSessionId, id)
         .then(() =>
           broadcastTripEvent('trip_compare_removed', {
@@ -1258,6 +1209,13 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
         .catch((error) => {
           console.warn('Failed to remove compare destination:', error);
         });
+      return;
+    }
+
+    if (tripSessionId) {
+      void broadcastTripEvent('trip_compare_removed', {
+        destinationId: id,
+      });
     }
   }, [tripSessionId, broadcastTripEvent]);
 
@@ -1267,10 +1225,15 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       if (prev.some((d) => d.id === dest.id)) return prev;
       return [...prev, dest];
     });
-    if (tripSessionId) {
+    if (tripSessionId && !isCustomMarkerId(dest.id)) {
       saveCompareDestination(tripSessionId, dest.id)
         .then(() => broadcastTripEvent('trip_compare_added', { destination: dest }))
         .catch((error) => console.warn('Failed to persist compare destination:', error));
+      return;
+    }
+
+    if (tripSessionId) {
+      void broadcastTripEvent('trip_compare_added', { destination: dest });
     }
   }, [tripSessionId, broadcastTripEvent]);
 
@@ -1409,7 +1372,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
               selectedDestinationId={selectedDestinationId}
               onSelectDestination={setSelectedDestinationId}
               onAddToCompare={handleAddToCompare}
-              onMoveDestination={handleMoveRecommendation}
+              onAddCustomToCompare={handleAddCustomToCompare}
               onAddCustomMarker={handleAddCustomMarker}
               onMoveCustomMarker={handleMoveCustomMarker}
               isInCompareList={isInCompareList}

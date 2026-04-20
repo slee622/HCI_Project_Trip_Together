@@ -42,7 +42,7 @@ interface TripMapViewProps {
   selectedDestinationId?: string | null;
   onSelectDestination?: (id: string | null) => void;
   onAddToCompare?: (dest: RecommendationWithEstimate) => void;
-  onMoveDestination?: (id: string, latitude: number, longitude: number) => void;
+  onAddCustomToCompare?: (marker: CustomMapMarker) => void;
   onAddCustomMarker?: (latitude: number, longitude: number) => void;
   onMoveCustomMarker?: (id: string, latitude: number, longitude: number) => void;
   isInCompareList?: (id: string) => boolean;
@@ -144,7 +144,6 @@ const MapPopupContent: React.FC<{
   dest: RecommendationWithEstimate;
   isInCompare: boolean;
   onToggleCompare: () => void;
-  isEditable?: boolean;
 }> = ({ dest, isInCompare, onToggleCompare }) => {
   const category = dest.reason.split('.')[0] || 'Destination';
   const priceRange = dest.estimate
@@ -167,8 +166,16 @@ const MapPopupContent: React.FC<{
     React.createElement('div', { key: 'title', style: { fontSize: 16, fontWeight: 'bold', color: '#1A1A2E', marginBottom: 4 } },
       `${dest.city}, ${dest.state}`
     ),
-    React.createElement('div', { key: 'category', style: { fontSize: 13, color: '#F5A623', fontWeight: 500, marginBottom: 4 } }, 
+    React.createElement('div', { key: 'category', style: { fontSize: 13, color: '#F5A623', fontWeight: 500, marginBottom: 4 } },
       category
+    ),
+    React.createElement(
+      'div',
+      {
+        key: 'description',
+        style: { fontSize: 12, color: '#4B5563', lineHeight: '16px', marginBottom: 6 },
+      },
+      dest.reason
     ),
     React.createElement('div', { key: 'price', style: { fontSize: 13, color: '#666', marginBottom: 12 } }, 
       priceRange
@@ -181,7 +188,7 @@ const MapPopupContent: React.FC<{
         marginBottom: 12,
         fontWeight: 600,
       },
-    }, 'Drag the pin to adjust this destination'),
+    }, 'Recommendation marker position is fixed'),
     React.createElement('label', { 
       key: 'compare', 
       style: { 
@@ -205,13 +212,86 @@ const MapPopupContent: React.FC<{
   ]);
 };
 
+const CustomMapPopupContent: React.FC<{
+  marker: CustomMapMarker;
+  isInCompare: boolean;
+  onToggleCompare: () => void;
+}> = ({ marker, isInCompare, onToggleCompare }) => {
+  const category = 'Custom location';
+  const priceRange = 'Price TBD';
+  const description = 'Added custom location marker for your group trip.';
+
+  const dragData = JSON.stringify({
+    id: marker.id,
+    city: marker.city,
+    state: marker.state,
+    category,
+    priceRange,
+  });
+
+  return React.createElement('div', {
+    draggable: true,
+    onDragStart: (e: any) => { e.dataTransfer.setData('application/json', dragData); },
+    style: { minWidth: 180, padding: 4, cursor: 'grab' },
+  }, [
+    React.createElement(
+      'div',
+      { key: 'title', style: { fontSize: 16, fontWeight: 'bold', color: '#1A1A2E', marginBottom: 4 } },
+      `${marker.city}${marker.state ? `, ${marker.state}` : ''}`
+    ),
+    React.createElement('div', { key: 'category', style: { fontSize: 13, color: '#0EA5E9', fontWeight: 500, marginBottom: 4 } },
+      category
+    ),
+    React.createElement(
+      'div',
+      {
+        key: 'description',
+        style: { fontSize: 12, color: '#4B5563', lineHeight: '16px', marginBottom: 6 },
+      },
+      description
+    ),
+    React.createElement('div', { key: 'price', style: { fontSize: 13, color: '#666', marginBottom: 12 } },
+      priceRange
+    ),
+    React.createElement('div', {
+      key: 'hint',
+      style: {
+        fontSize: 12,
+        color: '#0EA5E9',
+        marginBottom: 12,
+        fontWeight: 600,
+      },
+    }, 'Drag the pin to adjust this destination'),
+    React.createElement('label', {
+      key: 'compare',
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        cursor: 'pointer',
+        fontSize: 13,
+        color: '#333',
+      },
+    }, [
+      React.createElement('input', {
+        key: 'checkbox',
+        type: 'checkbox',
+        checked: isInCompare,
+        onChange: onToggleCompare,
+        style: { width: 16, height: 16, accentColor: '#F5A623' },
+      }),
+      'Add to Compare',
+    ]),
+  ]);
+};
+
 export const TripMapView: React.FC<TripMapViewProps> = ({
   recommendations,
   customMarkers = [],
   selectedDestinationId,
   onSelectDestination,
   onAddToCompare,
-  onMoveDestination,
+  onAddCustomToCompare,
   onAddCustomMarker,
   onMoveCustomMarker,
   isInCompareList = () => false,
@@ -304,14 +384,9 @@ export const TripMapView: React.FC<TripMapViewProps> = ({
             key={dest.id}
             position={[dest.latitude, dest.longitude]}
             icon={dest.id === selectedDestinationId ? selectedPinIcon : pinIcon}
-            draggable={true}
+            draggable={false}
             eventHandlers={{
               click: () => onSelectDestination?.(dest.id),
-              dragend: (event: any) => {
-                const marker = event.target;
-                const position = marker.getLatLng();
-                onMoveDestination?.(dest.id, position.lat, position.lng);
-              },
             }}
           >
             <Popup>
@@ -338,37 +413,11 @@ export const TripMapView: React.FC<TripMapViewProps> = ({
             }}
           >
             <Popup>
-              {React.createElement(
-                'div',
-                { style: { minWidth: 180, padding: 4 } },
-                [
-                  React.createElement(
-                    'div',
-                    {
-                      key: 'title',
-                      style: {
-                        fontSize: 16,
-                        fontWeight: 'bold',
-                        color: '#1A1A2E',
-                        marginBottom: 6,
-                      },
-                    },
-                    `${marker.city}${marker.state ? `, ${marker.state}` : ''}`
-                  ),
-                  React.createElement(
-                    'div',
-                    {
-                      key: 'hint',
-                      style: {
-                        fontSize: 12,
-                        color: '#0EA5E9',
-                        fontWeight: 600,
-                      },
-                    },
-                    'Custom marker (drag to move)'
-                  ),
-                ]
-              )}
+              <CustomMapPopupContent
+                marker={marker}
+                isInCompare={isInCompareList(marker.id)}
+                onToggleCompare={() => onAddCustomToCompare?.(marker)}
+              />
             </Popup>
           </Marker>
         ))}
