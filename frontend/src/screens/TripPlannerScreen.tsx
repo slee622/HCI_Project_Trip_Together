@@ -458,32 +458,6 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       ),
     [groupMembers, livePreferences, currentUserId]
   );
-  const markerOverrideByDestinationId = useMemo(() => {
-    const next = new Map<string, StartupTripMapMarker>();
-    tripMapMarkers.forEach((marker) => {
-      if (marker.sourceDestinationId && !next.has(marker.sourceDestinationId)) {
-        next.set(marker.sourceDestinationId, marker);
-      }
-    });
-    return next;
-  }, [tripMapMarkers]);
-  const mapRecommendations = useMemo(
-    () =>
-      recommendations.map((destination) => {
-        const marker = markerOverrideByDestinationId.get(destination.id);
-        if (!marker) {
-          return destination;
-        }
-        return {
-          ...destination,
-          city: marker.city || destination.city,
-          state: marker.state || destination.state,
-          latitude: marker.latitude,
-          longitude: marker.longitude,
-        };
-      }),
-    [recommendations, markerOverrideByDestinationId]
-  );
   const customMapMarkers = useMemo<CustomMapMarker[]>(
     () =>
       tripMapMarkers
@@ -554,6 +528,10 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   }, [activeTrip, tripSessionId]);
 
   const upsertTripMapMarkerLocal = useCallback((marker: StartupTripMapMarker): void => {
+    if (marker.sourceDestinationId) {
+      return;
+    }
+
     setTripMapMarkers((prev) => {
       const index = prev.findIndex((item) => item.markerId === marker.markerId);
       if (index < 0) {
@@ -563,22 +541,6 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       next[index] = marker;
       return next;
     });
-
-    if (!marker.sourceDestinationId) {
-      return;
-    }
-
-    setCompareList((prev) =>
-      prev.map((destination) =>
-        destination.id === marker.sourceDestinationId
-          ? {
-              ...destination,
-              city: marker.city,
-              state: marker.state,
-            }
-          : destination
-      )
-    );
   }, []);
 
   const removeTripMapMarkerLocal = useCallback((markerId: string): void => {
@@ -593,29 +555,14 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     if (!tripSessionId) return;
     return listTripMapMarkers(tripSessionId)
       .then((items) => {
-        setTripMapMarkers(items);
-        const itemBySource = new Map(
-          items
-            .filter((item) => item.sourceDestinationId)
-            .map((item) => [item.sourceDestinationId as string, item])
-        );
+        const customOnlyItems = items.filter((item) => !item.sourceDestinationId);
+        setTripMapMarkers(customOnlyItems);
         const customMarkerIds = new Set(
-          items
-            .filter((item) => !item.sourceDestinationId)
-            .map((item) => item.markerId)
+          customOnlyItems.map((item) => item.markerId)
         );
         setCompareList((prev) =>
           prev
             .filter((destination) => !isCustomMarkerId(destination.id) || customMarkerIds.has(destination.id))
-            .map((destination) => {
-              const marker = itemBySource.get(destination.id);
-              if (!marker) return destination;
-              return {
-                ...destination,
-                city: marker.city,
-                state: marker.state,
-              };
-            })
         );
       })
       .catch((error) => {
@@ -700,32 +647,6 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
         console.warn('Failed to load compare destinations:', error);
       });
   }, [tripSessionId]);
-
-  useEffect(() => {
-    if (tripMapMarkers.length === 0) {
-      return;
-    }
-
-    setCompareList((prev) => {
-      let changed = false;
-      const next = prev.map((destination) => {
-        const marker = tripMapMarkers.find((item) => item.sourceDestinationId === destination.id);
-        if (!marker) {
-          return destination;
-        }
-        if (destination.city === marker.city && destination.state === marker.state) {
-          return destination;
-        }
-        changed = true;
-        return {
-          ...destination,
-          city: marker.city,
-          state: marker.state,
-        };
-      });
-      return changed ? next : prev;
-    });
-  }, [tripMapMarkers]);
 
   const ensureGroupMember = useCallback((userId: string): void => {
     if (!userId) return;
@@ -1424,7 +1345,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
           {/* Map Area */}
           <View style={styles.mapContainer}>
             <TripMapView
-              recommendations={mapRecommendations}
+              recommendations={recommendations}
               customMarkers={customMapMarkers}
               selectedDestinationId={selectedDestinationId}
               onSelectDestination={setSelectedDestinationId}

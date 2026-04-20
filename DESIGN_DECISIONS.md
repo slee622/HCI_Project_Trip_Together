@@ -71,3 +71,6 @@
 
 24. **2026-04-17: Trip map markers persist as collaborative trip state**
     Marker coordinates now persist in a dedicated `trip_map_markers` table (instead of local-only UI state), with trip-scoped RPCs for upsert/list and Supabase Realtime publication enabled for websocket sync. Destination markers use their destination id as marker id for stable coordinate overrides, and users can also add custom markers with generated ids so non-catalog locations can be shared and moved collaboratively across all trip members.
+
+25. **2026-04-20: Compare labels use canonical destination data, not map-marker overrides**
+    Planner compare entries now keep city/state labels from persisted destination records (`trip_compare_destinations` + `destinations`) and ignore legacy `trip_map_markers` rows tied to `source_destination_id`. Marker syncing is treated as custom-marker-only state so stale recommendation-marker geocode rows cannot randomly rename compare options across reloads.
