@@ -174,3 +174,53 @@ export async function removeCompareDestination(
     session
   );
 }
+
+export interface PersistedVote {
+  destinationId: string;
+  userId: string;
+  vote: -1 | 1;
+  updatedAt: string;
+}
+
+/**
+ * Fetch the canonical set of votes for a trip session directly from the
+ * database. Used when transitioning to the 'voted' stage so every client
+ * computes the winner from the same authoritative data instead of relying on
+ * potentially-incomplete realtime broadcasts.
+ */
+export async function fetchTripVotes(tripSessionId: string): Promise<PersistedVote[]> {
+  assertConfig();
+  const session = await requireSession();
+
+  const url =
+    `${SUPABASE_URL}/rest/v1/trip_destination_votes` +
+    `?trip_session_id=eq.${encodeURIComponent(tripSessionId)}` +
+    `&select=destination_id,user_id,vote,updated_at`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${session.accessToken}`,
+      Accept: 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch votes (${response.status})`);
+  }
+
+  const rows: Array<{
+    destination_id: string;
+    user_id: string;
+    vote: -1 | 1;
+    updated_at: string;
+  }> = await response.json();
+
+  return rows.map((row) => ({
+    destinationId: row.destination_id,
+    userId: row.user_id,
+    vote: row.vote,
+    updatedAt: row.updated_at,
+  }));
+}

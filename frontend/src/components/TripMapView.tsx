@@ -161,11 +161,11 @@ const MapPopupContent: React.FC<{
       key: 'hint',
       style: {
         fontSize: 12,
-        color: '#2563EB',
+        color: '#6B7280',
         marginBottom: 12,
-        fontWeight: 600,
+        fontStyle: 'italic',
       },
-    }, 'Drag the pin to adjust this destination'),
+    }, 'Drag this card to add to compare panel'),
     React.createElement('label', { 
       key: 'compare', 
       style: { 
