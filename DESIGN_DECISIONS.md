@@ -77,3 +77,15 @@
 
 26. **2026-04-20: Custom marker compare selections persist in a dedicated trip-scoped table**
     Compare entries for user-added markers now persist via `trip_custom_compare_markers` with dedicated RPCs, instead of broadcast-only local state. This keeps custom compare choices stable across reloads and sessions while preserving destination-compare persistence in `trip_compare_destinations`.
+
+27. **2026-04-20: Voting accepts custom marker compare entries**
+    Vote persistence now supports both canonical destination ids and custom marker ids, with custom votes stored in `trip_custom_marker_votes` and startup hydration returning a unified vote list across both tables. This keeps compare voting behavior consistent when users include custom map locations.
+
+28. **2026-04-20: Compare voting cards reconcile live destination updates by id**
+    Compare screen card state now merges incoming destination prop changes (including custom-marker city/state/coordinate updates) into existing cards while preserving per-card flight/hotel selections. This prevents stale marker details in active voting sessions when teammates move custom markers.
+
+29. **2026-04-20: Moving a custom marker invalidates existing votes for that marker**
+    When a custom marker's coordinates change, the database now clears votes tied to that marker id so prior votes do not carry over to a materially different location. This preserves vote meaning by binding it to a specific marker position rather than only to marker identity.
+
+30. **2026-04-20: Custom marker move events clear local vote state immediately**
+    Planner marker-upsert handling now detects coordinate changes on custom markers and clears local votes for that marker id immediately, instead of waiting solely on vote-table realtime deletes. This prevents stale "voted" UI state for other users after a marker move.

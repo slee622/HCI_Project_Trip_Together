@@ -226,6 +226,13 @@ interface TripVoteRealtimeRow {
   updated_at: string;
 }
 
+interface TripCustomMarkerVoteRealtimeRow {
+  marker_id: string;
+  user_id: string;
+  vote: -1 | 1;
+  updated_at: string;
+}
+
 interface TripPreferenceBroadcastPayload {
   userId: string;
   adventure: number;
@@ -463,6 +470,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   );
   const [votes, setVotes] = useState<StartupVote[]>(scopedStartupState?.votes || []);
   const [tripMapMarkers, setTripMapMarkers] = useState<StartupTripMapMarker[]>([]);
+  const tripMapMarkersRef = useRef<StartupTripMapMarker[]>([]);
   const compareUsers = useMemo(
     () => mapGroupMembersToCompareUsers(groupMembers),
     [groupMembers]
@@ -490,6 +498,10 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     [tripMapMarkers]
   );
   const tripRealtimeChannelRef = useRef<RealtimeChannel | null>(null);
+
+  useEffect(() => {
+    tripMapMarkersRef.current = tripMapMarkers;
+  }, [tripMapMarkers]);
 
   // Debounce timer ref
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -550,6 +562,16 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       return;
     }
 
+    const existingMarker = tripMapMarkersRef.current.find((item) => item.markerId === marker.markerId);
+    const customMarkerMoved = Boolean(
+      existingMarker
+      && isCustomMarkerId(marker.markerId)
+      && (
+        existingMarker.latitude !== marker.latitude
+        || existingMarker.longitude !== marker.longitude
+      )
+    );
+
     setTripMapMarkers((prev) => {
       const index = prev.findIndex((item) => item.markerId === marker.markerId);
       if (index < 0) {
@@ -559,6 +581,42 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       next[index] = marker;
       return next;
     });
+
+    if (!isCustomMarkerId(marker.markerId)) {
+      return;
+    }
+
+    setCompareList((prev) => {
+      const index = prev.findIndex((destination) => destination.id === marker.markerId);
+      if (index < 0) {
+        return prev;
+      }
+
+      const existing = prev[index];
+      if (
+        existing.city === marker.city &&
+        existing.state === marker.state &&
+        existing.latitude === marker.latitude &&
+        existing.longitude === marker.longitude
+      ) {
+        return prev;
+      }
+
+      const next = [...prev];
+      next[index] = {
+        ...existing,
+        city: marker.city,
+        state: marker.state,
+        latitude: marker.latitude,
+        longitude: marker.longitude,
+      };
+      return next;
+    });
+
+    if (customMarkerMoved) {
+      setVotes((prev) => prev.filter((vote) => vote.destinationId !== marker.markerId));
+      setVotedDestinationIds((prev) => prev.filter((id) => id !== marker.markerId));
+    }
   }, []);
 
   const removeTripMapMarkerLocal = useCallback((markerId: string): void => {
@@ -578,9 +636,36 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
         const customMarkerIds = new Set(
           customOnlyItems.map((item) => item.markerId)
         );
+        const customMarkersById = new Map(
+          customOnlyItems.map((item) => [item.markerId, item] as const)
+        );
         setCompareList((prev) =>
           prev
             .filter((destination) => !isCustomMarkerId(destination.id) || customMarkerIds.has(destination.id))
+            .map((destination) => {
+              if (!isCustomMarkerId(destination.id)) {
+                return destination;
+              }
+              const marker = customMarkersById.get(destination.id);
+              if (!marker) {
+                return destination;
+              }
+              if (
+                destination.city === marker.city &&
+                destination.state === marker.state &&
+                destination.latitude === marker.latitude &&
+                destination.longitude === marker.longitude
+              ) {
+                return destination;
+              }
+              return {
+                ...destination,
+                city: marker.city,
+                state: marker.state,
+                latitude: marker.latitude,
+                longitude: marker.longitude,
+              };
+            })
         );
       })
       .catch((error) => {
@@ -723,6 +808,9 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
           (vote) => !(vote.destinationId === row.destination_id && vote.userId === row.user_id)
         )
       );
+      if (currentUserId && row.user_id === currentUserId) {
+        setVotedDestinationIds((prev) => prev.filter((id) => id !== row.destination_id));
+      }
       return;
     }
     ensureGroupMember(row.user_id);
@@ -745,7 +833,15 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       next[index] = mapped;
       return next;
     });
-  }, [ensureGroupMember]);
+
+    if (currentUserId && row.user_id === currentUserId) {
+      if (row.vote === 1) {
+        setVotedDestinationIds((prev) => [...prev.filter((id) => id !== row.destination_id), row.destination_id]);
+      } else {
+        setVotedDestinationIds((prev) => prev.filter((id) => id !== row.destination_id));
+      }
+    }
+  }, [ensureGroupMember, currentUserId]);
 
   useEffect(() => {
     if (!tripSessionId) return;
@@ -903,6 +999,32 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
               ) as TripVoteRealtimeRow | null;
               if (!row) return;
               applyRealtimeVote(row, eventType);
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'trip_custom_marker_votes',
+              filter: `trip_session_id=eq.${tripSessionId}`,
+            },
+            (payload) => {
+              if (!active) return;
+              const eventType = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE';
+              const row = (
+                eventType === 'DELETE' ? payload.old : payload.new
+              ) as TripCustomMarkerVoteRealtimeRow | null;
+              if (!row?.marker_id) return;
+              applyRealtimeVote(
+                {
+                  destination_id: row.marker_id,
+                  user_id: row.user_id,
+                  vote: row.vote,
+                  updated_at: row.updated_at,
+                },
+                eventType
+              );
             }
           )
           .on(
