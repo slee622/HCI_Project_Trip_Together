@@ -620,35 +620,34 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
     [positiveVotesByDestination, voteMemberById]
   );
 
-  // Only update if destinations array actually changes (new destinations added)
+  // Reconcile destination prop updates while preserving per-card selections.
   useEffect(() => {
     setDestinationsWithSelections((prev) => {
-      // Check if we have new destinations
-      const prevIds = new Set(prev.map((d) => d.id));
-      const newDests = destinations.filter((d) => !prevIds.has(d.id));
-
-      if (newDests.length === 0 && prev.length === destinations.length) {
-        // No change needed - keep existing selections
-        return prev;
-      }
-
-      // Merge: keep existing selections, add new destinations
       const existingById = new Map(prev.map((d) => [d.id, d]));
+
+      const buildUserBars = () =>
+        users.map((user) => ({
+          userId: user.id,
+          initial: user.initial,
+          color: user.color,
+          value: user.preferences?.overall || 5 + Math.random() * 4,
+        }));
+
       return destinations.map((dest) => {
         const existing = existingById.get(dest.id);
         if (existing) {
-          // Keep existing selection state
-          return existing;
+          return {
+            ...existing,
+            ...dest,
+            selectedDepartureFlight: existing.selectedDepartureFlight,
+            selectedReturnFlight: existing.selectedReturnFlight,
+            selectedHotel: existing.selectedHotel,
+            userBars: existing.userBars,
+          };
         }
-        // New destination
         return {
           ...dest,
-          userBars: users.map((user) => ({
-            userId: user.id,
-            initial: user.initial,
-            color: user.color,
-            value: user.preferences?.overall || 5 + Math.random() * 4,
-          })),
+          userBars: buildUserBars(),
         };
       });
     });

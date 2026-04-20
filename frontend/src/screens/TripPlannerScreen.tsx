@@ -470,6 +470,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   );
   const [votes, setVotes] = useState<StartupVote[]>(scopedStartupState?.votes || []);
   const [tripMapMarkers, setTripMapMarkers] = useState<StartupTripMapMarker[]>([]);
+  const tripMapMarkersRef = useRef<StartupTripMapMarker[]>([]);
   const compareUsers = useMemo(
     () => mapGroupMembersToCompareUsers(groupMembers),
     [groupMembers]
@@ -497,6 +498,10 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     [tripMapMarkers]
   );
   const tripRealtimeChannelRef = useRef<RealtimeChannel | null>(null);
+
+  useEffect(() => {
+    tripMapMarkersRef.current = tripMapMarkers;
+  }, [tripMapMarkers]);
 
   // Debounce timer ref
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -557,6 +562,16 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       return;
     }
 
+    const existingMarker = tripMapMarkersRef.current.find((item) => item.markerId === marker.markerId);
+    const customMarkerMoved = Boolean(
+      existingMarker
+      && isCustomMarkerId(marker.markerId)
+      && (
+        existingMarker.latitude !== marker.latitude
+        || existingMarker.longitude !== marker.longitude
+      )
+    );
+
     setTripMapMarkers((prev) => {
       const index = prev.findIndex((item) => item.markerId === marker.markerId);
       if (index < 0) {
@@ -597,6 +612,11 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       };
       return next;
     });
+
+    if (customMarkerMoved) {
+      setVotes((prev) => prev.filter((vote) => vote.destinationId !== marker.markerId));
+      setVotedDestinationIds((prev) => prev.filter((id) => id !== marker.markerId));
+    }
   }, []);
 
   const removeTripMapMarkerLocal = useCallback((markerId: string): void => {
@@ -788,6 +808,9 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
           (vote) => !(vote.destinationId === row.destination_id && vote.userId === row.user_id)
         )
       );
+      if (currentUserId && row.user_id === currentUserId) {
+        setVotedDestinationIds((prev) => prev.filter((id) => id !== row.destination_id));
+      }
       return;
     }
     ensureGroupMember(row.user_id);
@@ -810,7 +833,15 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       next[index] = mapped;
       return next;
     });
-  }, [ensureGroupMember]);
+
+    if (currentUserId && row.user_id === currentUserId) {
+      if (row.vote === 1) {
+        setVotedDestinationIds((prev) => [...prev.filter((id) => id !== row.destination_id), row.destination_id]);
+      } else {
+        setVotedDestinationIds((prev) => prev.filter((id) => id !== row.destination_id));
+      }
+    }
+  }, [ensureGroupMember, currentUserId]);
 
   useEffect(() => {
     if (!tripSessionId) return;
