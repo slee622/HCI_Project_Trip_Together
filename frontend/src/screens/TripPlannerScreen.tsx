@@ -26,8 +26,10 @@ import { SliderMemberMarker } from '../components/MultiUserSlider';
 import { CompareScreen } from './CompareScreen';
 import {
   listTripCompareDestinations,
+  listTripCustomCompareMarkers,
   listTripMapMarkers,
   StartupCompareOption,
+  StartupCustomCompareMarker,
   StartupGroupMember,
   StartupTripMapMarker,
   StartupPreference,
@@ -36,9 +38,11 @@ import {
   StartupVote,
 } from '../services/startupState';
 import {
+  removeCustomCompareMarker,
   removeTripMapMarker,
   removeTripVote,
   removeCompareDestination,
+  saveCustomCompareMarker,
   saveCompareDestination,
   saveTripMapMarker,
   saveSelectedDestination,
@@ -323,6 +327,20 @@ function mapCompareOptionsToCompareDestinations(
   });
 }
 
+function mapCustomCompareMarkersToCompareDestinations(
+  markers: StartupCustomCompareMarker[]
+): CompareDestination[] {
+  return markers.map((item) => ({
+    id: item.markerId,
+    city: item.marker.city,
+    state: item.marker.state,
+    latitude: item.marker.latitude,
+    longitude: item.marker.longitude,
+    category: 'Custom location',
+    priceRange: 'Price TBD',
+  }));
+}
+
 function mapGroupMembersToCompareUsers(
   members: StartupGroupMember[]
 ): Array<{ id: string; initial: string; color: string; preferences?: Record<string, number> }> {
@@ -458,32 +476,6 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       ),
     [groupMembers, livePreferences, currentUserId]
   );
-  const markerOverrideByDestinationId = useMemo(() => {
-    const next = new Map<string, StartupTripMapMarker>();
-    tripMapMarkers.forEach((marker) => {
-      if (marker.sourceDestinationId && !next.has(marker.sourceDestinationId)) {
-        next.set(marker.sourceDestinationId, marker);
-      }
-    });
-    return next;
-  }, [tripMapMarkers]);
-  const mapRecommendations = useMemo(
-    () =>
-      recommendations.map((destination) => {
-        const marker = markerOverrideByDestinationId.get(destination.id);
-        if (!marker) {
-          return destination;
-        }
-        return {
-          ...destination,
-          city: marker.city || destination.city,
-          state: marker.state || destination.state,
-          latitude: marker.latitude,
-          longitude: marker.longitude,
-        };
-      }),
-    [recommendations, markerOverrideByDestinationId]
-  );
   const customMapMarkers = useMemo<CustomMapMarker[]>(
     () =>
       tripMapMarkers
@@ -554,6 +546,10 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   }, [activeTrip, tripSessionId]);
 
   const upsertTripMapMarkerLocal = useCallback((marker: StartupTripMapMarker): void => {
+    if (marker.sourceDestinationId) {
+      return;
+    }
+
     setTripMapMarkers((prev) => {
       const index = prev.findIndex((item) => item.markerId === marker.markerId);
       if (index < 0) {
@@ -563,22 +559,6 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       next[index] = marker;
       return next;
     });
-
-    if (!marker.sourceDestinationId) {
-      return;
-    }
-
-    setCompareList((prev) =>
-      prev.map((destination) =>
-        destination.id === marker.sourceDestinationId
-          ? {
-              ...destination,
-              city: marker.city,
-              state: marker.state,
-            }
-          : destination
-      )
-    );
   }, []);
 
   const removeTripMapMarkerLocal = useCallback((markerId: string): void => {
@@ -593,29 +573,14 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     if (!tripSessionId) return;
     return listTripMapMarkers(tripSessionId)
       .then((items) => {
-        setTripMapMarkers(items);
-        const itemBySource = new Map(
-          items
-            .filter((item) => item.sourceDestinationId)
-            .map((item) => [item.sourceDestinationId as string, item])
-        );
+        const customOnlyItems = items.filter((item) => !item.sourceDestinationId);
+        setTripMapMarkers(customOnlyItems);
         const customMarkerIds = new Set(
-          items
-            .filter((item) => !item.sourceDestinationId)
-            .map((item) => item.markerId)
+          customOnlyItems.map((item) => item.markerId)
         );
         setCompareList((prev) =>
           prev
             .filter((destination) => !isCustomMarkerId(destination.id) || customMarkerIds.has(destination.id))
-            .map((destination) => {
-              const marker = itemBySource.get(destination.id);
-              if (!marker) return destination;
-              return {
-                ...destination,
-                city: marker.city,
-                state: marker.state,
-              };
-            })
         );
       })
       .catch((error) => {
@@ -671,9 +636,15 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       setCompareList([]);
       return;
     }
-    listTripCompareDestinations(tripSessionId)
-      .then((items) => {
-        setCompareList(mapCompareOptionsToCompareDestinations(items));
+    Promise.all([
+      listTripCompareDestinations(tripSessionId),
+      listTripCustomCompareMarkers(tripSessionId),
+    ])
+      .then(([destinationItems, customMarkerItems]) => {
+        setCompareList([
+          ...mapCompareOptionsToCompareDestinations(destinationItems),
+          ...mapCustomCompareMarkersToCompareDestinations(customMarkerItems),
+        ]);
       })
       .catch((error) => {
         console.warn('Failed to load compare destinations:', error);
@@ -692,40 +663,20 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
 
   const loadCompareDestinations = useCallback(() => {
     if (!tripSessionId) return;
-    return listTripCompareDestinations(tripSessionId)
-      .then((items) => {
-        setCompareList(mapCompareOptionsToCompareDestinations(items));
+    return Promise.all([
+      listTripCompareDestinations(tripSessionId),
+      listTripCustomCompareMarkers(tripSessionId),
+    ])
+      .then(([destinationItems, customMarkerItems]) => {
+        setCompareList([
+          ...mapCompareOptionsToCompareDestinations(destinationItems),
+          ...mapCustomCompareMarkersToCompareDestinations(customMarkerItems),
+        ]);
       })
       .catch((error) => {
         console.warn('Failed to load compare destinations:', error);
       });
   }, [tripSessionId]);
-
-  useEffect(() => {
-    if (tripMapMarkers.length === 0) {
-      return;
-    }
-
-    setCompareList((prev) => {
-      let changed = false;
-      const next = prev.map((destination) => {
-        const marker = tripMapMarkers.find((item) => item.sourceDestinationId === destination.id);
-        if (!marker) {
-          return destination;
-        }
-        if (destination.city === marker.city && destination.state === marker.state) {
-          return destination;
-        }
-        changed = true;
-        return {
-          ...destination,
-          city: marker.city,
-          state: marker.state,
-        };
-      });
-      return changed ? next : prev;
-    });
-  }, [tripMapMarkers]);
 
   const ensureGroupMember = useCallback((userId: string): void => {
     if (!userId) return;
@@ -960,6 +911,19 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
               event: '*',
               schema: 'public',
               table: 'trip_compare_destinations',
+              filter: `trip_session_id=eq.${tripSessionId}`,
+            },
+            () => {
+              if (!active) return;
+              void loadCompareDestinations();
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'trip_custom_compare_markers',
               filter: `trip_session_id=eq.${tripSessionId}`,
             },
             () => {
@@ -1209,6 +1173,8 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       id: dest.id,
       city: dest.city,
       state: dest.state,
+      latitude: dest.latitude,
+      longitude: dest.longitude,
       category: dest.reason.split('.')[0] || 'Destination',
       priceRange: dest.estimate
         ? `$${dest.estimate.low}-${dest.estimate.high}/person`
@@ -1237,6 +1203,8 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       id: marker.id,
       city: marker.city,
       state: marker.state,
+      latitude: marker.latitude,
+      longitude: marker.longitude,
       category: 'Custom location',
       priceRange: 'Price TBD',
     };
@@ -1247,9 +1215,23 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     });
 
     if (tripSessionId) {
-      void broadcastTripEvent('trip_compare_added', {
-        destination: compareDestination,
-      });
+      saveTripMapMarker(tripSessionId, {
+        markerId: marker.id,
+        sourceDestinationId: null,
+        city: marker.city,
+        state: marker.state,
+        latitude: marker.latitude,
+        longitude: marker.longitude,
+      })
+        .then(() => saveCustomCompareMarker(tripSessionId, marker.id))
+        .then(() =>
+          broadcastTripEvent('trip_compare_added', {
+            destination: compareDestination,
+          })
+        )
+        .catch((error) => {
+          console.warn('Failed to persist custom compare marker:', error);
+        });
     }
   }, [tripSessionId, broadcastTripEvent]);
 
@@ -1265,6 +1247,19 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
         )
         .catch((error) => {
           console.warn('Failed to remove compare destination:', error);
+        });
+      return;
+    }
+
+    if (tripSessionId && isCustomMarkerId(id)) {
+      removeCustomCompareMarker(tripSessionId, id)
+        .then(() =>
+          broadcastTripEvent('trip_compare_removed', {
+            destinationId: id,
+          })
+        )
+        .catch((error) => {
+          console.warn('Failed to remove custom compare marker:', error);
         });
       return;
     }
@@ -1286,6 +1281,28 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       saveCompareDestination(tripSessionId, dest.id)
         .then(() => broadcastTripEvent('trip_compare_added', { destination: dest }))
         .catch((error) => console.warn('Failed to persist compare destination:', error));
+      return;
+    }
+
+    if (tripSessionId && isCustomMarkerId(dest.id)) {
+      const ensureCustomMarkerSaved = async (): Promise<void> => {
+        if (typeof dest.latitude !== 'number' || typeof dest.longitude !== 'number') {
+          return;
+        }
+        await saveTripMapMarker(tripSessionId, {
+          markerId: dest.id,
+          sourceDestinationId: null,
+          city: dest.city,
+          state: dest.state,
+          latitude: dest.latitude,
+          longitude: dest.longitude,
+        });
+      };
+
+      ensureCustomMarkerSaved()
+        .then(() => saveCustomCompareMarker(tripSessionId, dest.id))
+        .then(() => broadcastTripEvent('trip_compare_added', { destination: dest }))
+        .catch((error) => console.warn('Failed to persist custom compare marker:', error));
       return;
     }
 
@@ -1424,7 +1441,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
           {/* Map Area */}
           <View style={styles.mapContainer}>
             <TripMapView
-              recommendations={mapRecommendations}
+              recommendations={recommendations}
               customMarkers={customMapMarkers}
               selectedDestinationId={selectedDestinationId}
               onSelectDestination={setSelectedDestinationId}

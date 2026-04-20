@@ -87,6 +87,32 @@ export interface StartupCompareOption {
   destination: StartupCompareDestination;
 }
 
+interface StartupCustomCompareMarkerRow {
+  marker_id: string;
+  added_by: string;
+  added_at: string;
+  marker: {
+    id: string;
+    city: string;
+    state: string;
+    latitude: number;
+    longitude: number;
+  };
+}
+
+export interface StartupCustomCompareMarker {
+  markerId: string;
+  addedBy: string;
+  addedAt: string;
+  marker: {
+    id: string;
+    city: string;
+    state: string;
+    latitude: number;
+    longitude: number;
+  };
+}
+
 interface StartupTripMapMarkerRow {
   marker_id: string;
   source_destination_id: string | null;
@@ -397,6 +423,28 @@ export async function listTripCompareDestinations(
     addedBy: row.added_by,
     addedAt: row.added_at,
     destination: row.destination,
+  }));
+}
+
+export async function listTripCustomCompareMarkers(
+  tripSessionId: string
+): Promise<StartupCustomCompareMarker[]> {
+  const session = await getStoredSession();
+  if (!session) {
+    throw new Error('No local auth session found. Sign in first.');
+  }
+
+  const rows = await fetchRpc<StartupCustomCompareMarkerRow[]>(
+    'list_trip_custom_compare_markers',
+    { p_trip_session_id: tripSessionId },
+    session
+  );
+
+  return (rows || []).map((row) => ({
+    markerId: row.marker_id,
+    addedBy: row.added_by,
+    addedAt: row.added_at,
+    marker: row.marker,
   }));
 }
 

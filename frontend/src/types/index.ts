@@ -84,6 +84,8 @@ export interface CompareDestination {
   state: string;
   category: string;
   priceRange: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 // ============================================
