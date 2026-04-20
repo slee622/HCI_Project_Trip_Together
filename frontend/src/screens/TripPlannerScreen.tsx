@@ -226,6 +226,13 @@ interface TripVoteRealtimeRow {
   updated_at: string;
 }
 
+interface TripCustomMarkerVoteRealtimeRow {
+  marker_id: string;
+  user_id: string;
+  vote: -1 | 1;
+  updated_at: string;
+}
+
 interface TripPreferenceBroadcastPayload {
   userId: string;
   adventure: number;
@@ -961,6 +968,32 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
               ) as TripVoteRealtimeRow | null;
               if (!row) return;
               applyRealtimeVote(row, eventType);
+            }
+          )
+          .on(
+            'postgres_changes',
+            {
+              event: '*',
+              schema: 'public',
+              table: 'trip_custom_marker_votes',
+              filter: `trip_session_id=eq.${tripSessionId}`,
+            },
+            (payload) => {
+              if (!active) return;
+              const eventType = payload.eventType as 'INSERT' | 'UPDATE' | 'DELETE';
+              const row = (
+                eventType === 'DELETE' ? payload.old : payload.new
+              ) as TripCustomMarkerVoteRealtimeRow | null;
+              if (!row?.marker_id) return;
+              applyRealtimeVote(
+                {
+                  destination_id: row.marker_id,
+                  user_id: row.user_id,
+                  vote: row.vote,
+                  updated_at: row.updated_at,
+                },
+                eventType
+              );
             }
           )
           .on(

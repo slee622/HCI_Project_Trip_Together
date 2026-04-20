@@ -77,3 +77,6 @@
 
 26. **2026-04-20: Custom marker compare selections persist in a dedicated trip-scoped table**
     Compare entries for user-added markers now persist via `trip_custom_compare_markers` with dedicated RPCs, instead of broadcast-only local state. This keeps custom compare choices stable across reloads and sessions while preserving destination-compare persistence in `trip_compare_destinations`.
+
+27. **2026-04-20: Voting accepts custom marker compare entries**
+    Vote persistence now supports both canonical destination ids and custom marker ids, with custom votes stored in `trip_custom_marker_votes` and startup hydration returning a unified vote list across both tables. This keeps compare voting behavior consistent when users include custom map locations.
