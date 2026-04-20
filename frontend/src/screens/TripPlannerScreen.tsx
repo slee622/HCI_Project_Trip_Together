@@ -559,6 +559,37 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       next[index] = marker;
       return next;
     });
+
+    if (!isCustomMarkerId(marker.markerId)) {
+      return;
+    }
+
+    setCompareList((prev) => {
+      const index = prev.findIndex((destination) => destination.id === marker.markerId);
+      if (index < 0) {
+        return prev;
+      }
+
+      const existing = prev[index];
+      if (
+        existing.city === marker.city &&
+        existing.state === marker.state &&
+        existing.latitude === marker.latitude &&
+        existing.longitude === marker.longitude
+      ) {
+        return prev;
+      }
+
+      const next = [...prev];
+      next[index] = {
+        ...existing,
+        city: marker.city,
+        state: marker.state,
+        latitude: marker.latitude,
+        longitude: marker.longitude,
+      };
+      return next;
+    });
   }, []);
 
   const removeTripMapMarkerLocal = useCallback((markerId: string): void => {
@@ -578,9 +609,36 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
         const customMarkerIds = new Set(
           customOnlyItems.map((item) => item.markerId)
         );
+        const customMarkersById = new Map(
+          customOnlyItems.map((item) => [item.markerId, item] as const)
+        );
         setCompareList((prev) =>
           prev
             .filter((destination) => !isCustomMarkerId(destination.id) || customMarkerIds.has(destination.id))
+            .map((destination) => {
+              if (!isCustomMarkerId(destination.id)) {
+                return destination;
+              }
+              const marker = customMarkersById.get(destination.id);
+              if (!marker) {
+                return destination;
+              }
+              if (
+                destination.city === marker.city &&
+                destination.state === marker.state &&
+                destination.latitude === marker.latitude &&
+                destination.longitude === marker.longitude
+              ) {
+                return destination;
+              }
+              return {
+                ...destination,
+                city: marker.city,
+                state: marker.state,
+                latitude: marker.latitude,
+                longitude: marker.longitude,
+              };
+            })
         );
       })
       .catch((error) => {
