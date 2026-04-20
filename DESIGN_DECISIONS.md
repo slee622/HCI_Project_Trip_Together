@@ -63,8 +63,11 @@
 21. **2026-04-14: RapidAPI rate limits fall back to mock travel data**
     Flights Sky requests now treat HTTP 429 as a temporary outage, disable live calls for a short cooldown window, and fall back to mock results. This keeps the travel planner responsive when RapidAPI quotas are exhausted and avoids repeated error spam during a rate-limit window.
 
-22. **2026-04-14: Map markers are draggable for direct editing**
-    Destination markers on the interactive map are now draggable on web, and the new coordinates are propagated back into planner state so users can reposition destinations without leaving the map. This addresses the usability concern about immutable map pins and makes the map actionable instead of read-only.
+22. **2026-04-19: Only custom map markers are draggable**
+    Recommendation markers are now fixed-position so ranked destination pins stay consistent for all users, while custom markers remain draggable for collaborative place annotation. This keeps generated recommendations stable while preserving map editing for user-added locations.
 
 23. **2026-04-14: Airport fallback searches for nearby airports when destination lacks one**
     The `searchAirport()` function now performs a secondary search for nearby airports when the initial query returns a non-airport result (city, town, etc.). When searching "[city] airport" returns an airport result, that airport is used for flight search instead of falling back to a non-airport entity. If no nearby airport is found, the city/town result is used as-is, allowing flight searches to fail gracefully if Flights Sky has no airport mappings for that region.
+
+24. **2026-04-17: Trip map markers persist as collaborative trip state**
+    Marker coordinates now persist in a dedicated `trip_map_markers` table (instead of local-only UI state), with trip-scoped RPCs for upsert/list and Supabase Realtime publication enabled for websocket sync. Destination markers use their destination id as marker id for stable coordinate overrides, and users can also add custom markers with generated ids so non-catalog locations can be shared and moved collaboratively across all trip members.

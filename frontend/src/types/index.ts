@@ -143,3 +143,11 @@ export interface TripEstimateRequest {
 export interface RecommendationWithEstimate extends RecommendationResult {
   estimate?: TripEstimate;
 }
+
+export interface CustomMapMarker {
+  id: string;
+  city: string;
+  state: string;
+  latitude: number;
+  longitude: number;
+}
