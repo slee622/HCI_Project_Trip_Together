@@ -863,9 +863,15 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       return;
     }
     const recsByDestId = new Map(recommendationsRef.current.map((r) => [r.id, r]));
-    listTripCompareDestinations(tripSessionId)
-      .then((items) => {
-        setCompareList(mapCompareOptionsToCompareDestinations(items, recsByDestId));
+    return Promise.all([
+      listTripCompareDestinations(tripSessionId),
+      listTripCustomCompareMarkers(tripSessionId),
+    ])
+      .then(([destinationItems, customMarkerItems]) => {
+        setCompareList([
+          ...mapCompareOptionsToCompareDestinations(destinationItems, recsByDestId),
+          ...mapCustomCompareMarkersToCompareDestinations(customMarkerItems),
+        ]);
       })
       .catch((error) => {
         console.warn('Failed to load compare destinations:', error);
