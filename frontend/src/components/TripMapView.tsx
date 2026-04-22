@@ -187,11 +187,11 @@ const MapPopupContent: React.FC<{
       key: 'hint',
       style: {
         fontSize: 12,
-        color: '#6B7280',
+        color: '#2563EB',
         marginBottom: 12,
-        fontStyle: 'italic',
+        fontWeight: 600,
       },
-    }, 'Drag the pin to adjust this destination'),
+    }, 'Recommendation marker position is fixed'),
     React.createElement('label', { 
       key: 'compare', 
       style: { 
