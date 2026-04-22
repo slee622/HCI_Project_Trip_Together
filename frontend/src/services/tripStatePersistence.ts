@@ -184,6 +184,78 @@ export async function removeCompareDestination(
   );
 }
 
+export async function saveTripMapMarker(
+  tripSessionId: string,
+  marker: {
+    markerId: string;
+    sourceDestinationId?: string | null;
+    city: string;
+    state: string;
+    latitude: number;
+    longitude: number;
+  }
+): Promise<void> {
+  const session = await requireSession();
+  await callRpc<null>(
+    'upsert_trip_map_marker',
+    {
+      p_trip_session_id: tripSessionId,
+      p_marker_id: marker.markerId,
+      p_latitude: marker.latitude,
+      p_longitude: marker.longitude,
+      p_city: marker.city,
+      p_state: marker.state,
+      p_source_destination_id: marker.sourceDestinationId ?? null,
+    },
+    session
+  );
+}
+
+export async function removeTripMapMarker(
+  tripSessionId: string,
+  markerId: string
+): Promise<void> {
+  const session = await requireSession();
+  await callRpc<null>(
+    'remove_trip_map_marker',
+    {
+      p_trip_session_id: tripSessionId,
+      p_marker_id: markerId,
+    },
+    session
+  );
+}
+
+export async function saveCustomCompareMarker(
+  tripSessionId: string,
+  markerId: string
+): Promise<void> {
+  const session = await requireSession();
+  await callRpc<null>(
+    'upsert_trip_custom_compare_marker',
+    {
+      p_trip_session_id: tripSessionId,
+      p_marker_id: markerId,
+    },
+    session
+  );
+}
+
+export async function removeCustomCompareMarker(
+  tripSessionId: string,
+  markerId: string
+): Promise<void> {
+  const session = await requireSession();
+  await callRpc<null>(
+    'remove_trip_custom_compare_marker',
+    {
+      p_trip_session_id: tripSessionId,
+      p_marker_id: markerId,
+    },
+    session
+  );
+}
+
 export interface PersistedVote {
   destinationId: string;
   userId: string;

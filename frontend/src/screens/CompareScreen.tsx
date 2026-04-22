@@ -577,8 +577,8 @@ interface WinnerRevealProps {
   winner: WinnerInfo;
   winnerDestination: DestinationWithSelections | undefined;
   votes: DestinationVote[];
-  // voteMembers: VoteMember[];
-  // userColorMap?: Map<string, string>;
+  voteMembers: VoteMember[];
+  userColorMap?: Map<string, string>;
   tripDetails: {
     origin: string;
     departureDate: string;
@@ -594,8 +594,8 @@ const WinnerReveal: React.FC<WinnerRevealProps> = ({
   winner,
   winnerDestination,
   votes,
-  // voteMembers,
-  // userColorMap,
+  voteMembers,
+  userColorMap,
   tripDetails,
   onViewDepartureFlight,
   onViewReturnFlight,
