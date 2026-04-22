@@ -4,8 +4,8 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { View, StyleSheet, Text, ActivityIndicator, Platform, TouchableOpacity } from 'react-native';
-import { RecommendationWithEstimate } from '../types';
+import { View, StyleSheet, Text, ActivityIndicator, Platform } from 'react-native';
+import { CustomMapMarker, RecommendationWithEstimate } from '../types';
 
 // Leaflet imports (web only)
 let MapContainer: any;
@@ -13,6 +13,7 @@ let TileLayer: any;
 let Marker: any;
 let Popup: any;
 let useMap: any;
+let useMapEvents: any;
 let L: any;
 
 if (Platform.OS === 'web') {
@@ -23,6 +24,7 @@ if (Platform.OS === 'web') {
   Marker = reactLeaflet.Marker;
   Popup = reactLeaflet.Popup;
   useMap = reactLeaflet.useMap;
+  useMapEvents = reactLeaflet.useMapEvents;
   L = leaflet;
 
   // Fix default marker icons
@@ -36,10 +38,14 @@ if (Platform.OS === 'web') {
 
 interface TripMapViewProps {
   recommendations: RecommendationWithEstimate[];
+  customMarkers?: CustomMapMarker[];
   selectedDestinationId?: string | null;
   onSelectDestination?: (id: string | null) => void;
   onAddToCompare?: (dest: RecommendationWithEstimate) => void;
-  onMoveDestination?: (id: string, latitude: number, longitude: number) => void;
+  onAddCustomToCompare?: (marker: CustomMapMarker) => void;
+  onAddCustomMarker?: (latitude: number, longitude: number) => void;
+  onMoveCustomMarker?: (id: string, latitude: number, longitude: number) => void;
+  onDeleteCustomMarker?: (id: string) => void;
   isInCompareList?: (id: string) => boolean;
   loading?: boolean;
 }
@@ -96,20 +102,20 @@ const createPinIcon = (
 };
 
 // Component to fit map bounds
-const FitBounds: React.FC<{ recommendations: RecommendationWithEstimate[] }> = ({
-  recommendations,
+const FitBounds: React.FC<{ points: Array<{ latitude: number; longitude: number }> }> = ({
+  points,
 }) => {
   const map = useMap();
   const initialFitDone = React.useRef(false);
 
   useEffect(() => {
     // Only fit bounds on initial load, not on every recommendation change
-    if (recommendations.length > 0 && !initialFitDone.current) {
+    if (points.length > 0 && !initialFitDone.current) {
       initialFitDone.current = true;
       // Delay to ensure map is fully initialized
       setTimeout(() => {
         try {
-          const bounds = recommendations.map(
+          const bounds = points.map(
             (r) => [r.latitude, r.longitude] as [number, number]
           );
           map.fitBounds(bounds, { padding: [50, 50], animate: false });
@@ -118,8 +124,19 @@ const FitBounds: React.FC<{ recommendations: RecommendationWithEstimate[] }> = (
         }
       }, 100);
     }
-  }, [recommendations, map]);
+  }, [points, map]);
 
+  return null;
+};
+
+const AddCustomMarkerOnDoubleClick: React.FC<{
+  onAddCustomMarker?: (latitude: number, longitude: number) => void;
+}> = ({ onAddCustomMarker }) => {
+  useMapEvents({
+    dblclick: (event: any) => {
+      onAddCustomMarker?.(event.latlng.lat, event.latlng.lng);
+    },
+  });
   return null;
 };
 
@@ -128,7 +145,6 @@ const MapPopupContent: React.FC<{
   dest: RecommendationWithEstimate;
   isInCompare: boolean;
   onToggleCompare: () => void;
-  isEditable?: boolean;
 }> = ({ dest, isInCompare, onToggleCompare }) => {
   const category = dest.reason.split('.')[0] || 'Destination';
   const priceRange = dest.estimate
@@ -139,6 +155,8 @@ const MapPopupContent: React.FC<{
     id: dest.id,
     city: dest.city,
     state: dest.state,
+    latitude: dest.latitude,
+    longitude: dest.longitude,
     category,
     priceRange,
   });
@@ -151,8 +169,16 @@ const MapPopupContent: React.FC<{
     React.createElement('div', { key: 'title', style: { fontSize: 16, fontWeight: 'bold', color: '#1A1A2E', marginBottom: 4 } },
       `${dest.city}, ${dest.state}`
     ),
-    React.createElement('div', { key: 'category', style: { fontSize: 13, color: '#F5A623', fontWeight: 500, marginBottom: 4 } }, 
+    React.createElement('div', { key: 'category', style: { fontSize: 13, color: '#F5A623', fontWeight: 500, marginBottom: 4 } },
       category
+    ),
+    React.createElement(
+      'div',
+      {
+        key: 'description',
+        style: { fontSize: 12, color: '#4B5563', lineHeight: '16px', marginBottom: 6 },
+      },
+      dest.reason
     ),
     React.createElement('div', { key: 'price', style: { fontSize: 13, color: '#666', marginBottom: 12 } }, 
       priceRange
@@ -165,7 +191,7 @@ const MapPopupContent: React.FC<{
         marginBottom: 12,
         fontStyle: 'italic',
       },
-    }, 'Drag this card to add to compare panel'),
+    }, 'Drag the pin to adjust this destination'),
     React.createElement('label', { 
       key: 'compare', 
       style: { 
@@ -189,16 +215,118 @@ const MapPopupContent: React.FC<{
   ]);
 };
 
+const CustomMapPopupContent: React.FC<{
+  marker: CustomMapMarker;
+  isInCompare: boolean;
+  onToggleCompare: () => void;
+  onDelete: () => void;
+}> = ({ marker, isInCompare, onToggleCompare, onDelete }) => {
+  const category = 'Custom location';
+  const priceRange = 'Price TBD';
+  const description = 'Added custom location marker for your group trip.';
+
+  const dragData = JSON.stringify({
+    id: marker.id,
+    city: marker.city,
+    state: marker.state,
+    latitude: marker.latitude,
+    longitude: marker.longitude,
+    category,
+    priceRange,
+  });
+
+  return React.createElement('div', {
+    draggable: true,
+    onDragStart: (e: any) => { e.dataTransfer.setData('application/json', dragData); },
+    style: { minWidth: 180, padding: 4, cursor: 'grab' },
+  }, [
+    React.createElement(
+      'div',
+      { key: 'title', style: { fontSize: 16, fontWeight: 'bold', color: '#1A1A2E', marginBottom: 4 } },
+      `${marker.city}${marker.state ? `, ${marker.state}` : ''}`
+    ),
+    React.createElement('div', { key: 'category', style: { fontSize: 13, color: '#0EA5E9', fontWeight: 500, marginBottom: 4 } },
+      category
+    ),
+    React.createElement(
+      'div',
+      {
+        key: 'description',
+        style: { fontSize: 12, color: '#4B5563', lineHeight: '16px', marginBottom: 6 },
+      },
+      description
+    ),
+    React.createElement('div', { key: 'price', style: { fontSize: 13, color: '#666', marginBottom: 12 } },
+      priceRange
+    ),
+    React.createElement('div', {
+      key: 'hint',
+      style: {
+        fontSize: 12,
+        color: '#0EA5E9',
+        marginBottom: 12,
+        fontWeight: 600,
+      },
+    }, 'Drag the pin to adjust this destination'),
+    React.createElement('label', {
+      key: 'compare',
+      style: {
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        cursor: 'pointer',
+        fontSize: 13,
+        color: '#333',
+      },
+    }, [
+      React.createElement('input', {
+        key: 'checkbox',
+        type: 'checkbox',
+        checked: isInCompare,
+        onChange: onToggleCompare,
+        style: { width: 16, height: 16, accentColor: '#F5A623' },
+      }),
+      'Add to Compare',
+    ]),
+    React.createElement(
+      'button',
+      {
+        key: 'delete',
+        type: 'button',
+        onClick: onDelete,
+        style: {
+          marginTop: 10,
+          width: '100%',
+          backgroundColor: '#EF4444',
+          border: 'none',
+          borderRadius: 6,
+          color: '#FFFFFF',
+          fontSize: 12,
+          fontWeight: 700,
+          padding: '7px 8px',
+          cursor: 'pointer',
+        },
+      },
+      'Delete Custom Marker'
+    ),
+  ]);
+};
+
 export const TripMapView: React.FC<TripMapViewProps> = ({
   recommendations,
+  customMarkers = [],
   selectedDestinationId,
   onSelectDestination,
   onAddToCompare,
-  onMoveDestination,
+  onAddCustomToCompare,
+  onAddCustomMarker,
+  onMoveCustomMarker,
+  onDeleteCustomMarker,
   isInCompareList = () => false,
   loading = false,
 }) => {
   const [cssLoaded, setCssLoaded] = useState(false);
+  const mapPoints = [...recommendations, ...customMarkers];
 
   // Load Leaflet CSS and custom styles
   useEffect(() => {
@@ -234,7 +362,7 @@ export const TripMapView: React.FC<TripMapViewProps> = ({
     );
   }
 
-  if (recommendations.length === 0) {
+  if (recommendations.length === 0 && customMarkers.length === 0) {
     return (
       <View style={styles.emptyContainer}>
         <Text style={styles.emptyText}>
@@ -257,34 +385,36 @@ export const TripMapView: React.FC<TripMapViewProps> = ({
 
   const pinIcon = createPinIcon();
   const selectedPinIcon = createPinIcon(['#2563EB', '#60A5FA', '#BFDBFE'], true);
-
+  const customPinIcon = createPinIcon(['#0EA5E9', '#22C55E', '#14B8A6']);
   return (
     <View style={styles.container}>
+      {onAddCustomMarker ? (
+        <View style={styles.addMarkerHint}>
+          <Text style={styles.addMarkerHintText}>Double-click map to add a custom marker</Text>
+        </View>
+      ) : null}
       <MapContainer
         center={usCenter}
         zoom={4}
         style={{ width: '100%', height: '100%' }}
         scrollWheelZoom={true}
+        doubleClickZoom={false}
       >
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
-        <FitBounds recommendations={recommendations} />
+        <FitBounds points={mapPoints} />
+        <AddCustomMarkerOnDoubleClick onAddCustomMarker={onAddCustomMarker} />
 
         {recommendations.map((dest) => (
           <Marker
             key={dest.id}
             position={[dest.latitude, dest.longitude]}
             icon={dest.id === selectedDestinationId ? selectedPinIcon : pinIcon}
-            draggable={true}
+            draggable={false}
             eventHandlers={{
               click: () => onSelectDestination?.(dest.id),
-              dragend: (event: any) => {
-                const marker = event.target;
-                const position = marker.getLatLng();
-                onMoveDestination?.(dest.id, position.lat, position.lng);
-              },
             }}
           >
             <Popup>
@@ -292,6 +422,30 @@ export const TripMapView: React.FC<TripMapViewProps> = ({
                 dest={dest}
                 isInCompare={isInCompareList(dest.id)}
                 onToggleCompare={() => onAddToCompare?.(dest)}
+              />
+            </Popup>
+          </Marker>
+        ))}
+
+        {customMarkers.map((marker) => (
+          <Marker
+            key={`custom-${marker.id}`}
+            position={[marker.latitude, marker.longitude]}
+            icon={customPinIcon}
+            draggable={true}
+            eventHandlers={{
+              dragend: (event: any) => {
+                const updated = event.target.getLatLng();
+                onMoveCustomMarker?.(marker.id, updated.lat, updated.lng);
+              },
+            }}
+          >
+            <Popup>
+              <CustomMapPopupContent
+                marker={marker}
+                isInCompare={isInCompareList(marker.id)}
+                onToggleCompare={() => onAddCustomToCompare?.(marker)}
+                onDelete={() => onDeleteCustomMarker?.(marker.id)}
               />
             </Popup>
           </Marker>
@@ -305,6 +459,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
     backgroundColor: '#E8F4F8',
+  },
+  addMarkerHint: {
+    position: 'absolute',
+    top: 12,
+    right: 12,
+    zIndex: 500,
+    backgroundColor: 'rgba(255, 255, 255, 0.92)',
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: '#D8E4EA',
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+  },
+  addMarkerHintText: {
+    fontSize: 12,
+    color: '#0F4C81',
+    fontWeight: '700',
   },
   loadingContainer: {
     flex: 1,

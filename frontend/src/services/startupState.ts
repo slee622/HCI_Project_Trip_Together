@@ -87,6 +87,56 @@ export interface StartupCompareOption {
   destination: StartupCompareDestination;
 }
 
+interface StartupCustomCompareMarkerRow {
+  marker_id: string;
+  added_by: string;
+  added_at: string;
+  marker: {
+    id: string;
+    city: string;
+    state: string;
+    latitude: number;
+    longitude: number;
+  };
+}
+
+export interface StartupCustomCompareMarker {
+  markerId: string;
+  addedBy: string;
+  addedAt: string;
+  marker: {
+    id: string;
+    city: string;
+    state: string;
+    latitude: number;
+    longitude: number;
+  };
+}
+
+interface StartupTripMapMarkerRow {
+  marker_id: string;
+  source_destination_id: string | null;
+  city: string;
+  state: string;
+  latitude: number;
+  longitude: number;
+  added_by: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface StartupTripMapMarker {
+  markerId: string;
+  sourceDestinationId: string | null;
+  city: string;
+  state: string;
+  latitude: number;
+  longitude: number;
+  addedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface StartupTripSession {
   id: string;
   groupId: string;
@@ -373,5 +423,54 @@ export async function listTripCompareDestinations(
     addedBy: row.added_by,
     addedAt: row.added_at,
     destination: row.destination,
+  }));
+}
+
+export async function listTripCustomCompareMarkers(
+  tripSessionId: string
+): Promise<StartupCustomCompareMarker[]> {
+  const session = await getStoredSession();
+  if (!session) {
+    throw new Error('No local auth session found. Sign in first.');
+  }
+
+  const rows = await fetchRpc<StartupCustomCompareMarkerRow[]>(
+    'list_trip_custom_compare_markers',
+    { p_trip_session_id: tripSessionId },
+    session
+  );
+
+  return (rows || []).map((row) => ({
+    markerId: row.marker_id,
+    addedBy: row.added_by,
+    addedAt: row.added_at,
+    marker: row.marker,
+  }));
+}
+
+export async function listTripMapMarkers(
+  tripSessionId: string
+): Promise<StartupTripMapMarker[]> {
+  const session = await getStoredSession();
+  if (!session) {
+    throw new Error('No local auth session found. Sign in first.');
+  }
+
+  const rows = await fetchRpc<StartupTripMapMarkerRow[]>(
+    'list_trip_map_markers',
+    { p_trip_session_id: tripSessionId },
+    session
+  );
+
+  return (rows || []).map((row) => ({
+    markerId: row.marker_id,
+    sourceDestinationId: row.source_destination_id,
+    city: row.city,
+    state: row.state,
+    latitude: row.latitude,
+    longitude: row.longitude,
+    addedBy: row.added_by,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
   }));
 }

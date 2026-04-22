@@ -11,6 +11,15 @@ interface PersistedRecommendation {
   reason: string;
 }
 
+export interface PersistedTripMapMarker {
+  markerId: string;
+  sourceDestinationId?: string | null;
+  city: string;
+  state: string;
+  latitude: number;
+  longitude: number;
+}
+
 function assertConfig(): void {
   if (!SUPABASE_URL || !SUPABASE_ANON_KEY) {
     throw new Error('Missing EXPO_PUBLIC_SUPABASE_URL or EXPO_PUBLIC_SUPABASE_ANON_KEY');
@@ -182,12 +191,6 @@ export interface PersistedVote {
   updatedAt: string;
 }
 
-/**
- * Fetch the canonical set of votes for a trip session directly from the
- * database. Used when transitioning to the 'voted' stage so every client
- * computes the winner from the same authoritative data instead of relying on
- * potentially-incomplete realtime broadcasts.
- */
 export async function fetchTripVotes(tripSessionId: string): Promise<PersistedVote[]> {
   assertConfig();
   const session = await requireSession();

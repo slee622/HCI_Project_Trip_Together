@@ -11,6 +11,8 @@ export async function reverseGeocodeLocation(
   latitude: number,
   longitude: number
 ): Promise<ResolvedMapLocation | null> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 4000);
   try {
     const url = new URL('https://nominatim.openstreetmap.org/reverse');
     url.searchParams.set('format', 'jsonv2');
@@ -23,6 +25,7 @@ export async function reverseGeocodeLocation(
       headers: {
         Accept: 'application/json',
       },
+      signal: controller.signal,
     });
 
     if (!response.ok) {
@@ -54,5 +57,7 @@ export async function reverseGeocodeLocation(
   } catch (error) {
     console.warn('Reverse geocoding failed:', error);
     return null;
+  } finally {
+    clearTimeout(timeout);
   }
 }

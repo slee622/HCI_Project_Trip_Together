@@ -63,8 +63,29 @@
 21. **2026-04-14: RapidAPI rate limits fall back to mock travel data**
     Flights Sky requests now treat HTTP 429 as a temporary outage, disable live calls for a short cooldown window, and fall back to mock results. This keeps the travel planner responsive when RapidAPI quotas are exhausted and avoids repeated error spam during a rate-limit window.
 
-22. **2026-04-14: Map markers are draggable for direct editing**
-    Destination markers on the interactive map are now draggable on web, and the new coordinates are propagated back into planner state so users can reposition destinations without leaving the map. This addresses the usability concern about immutable map pins and makes the map actionable instead of read-only.
+22. **2026-04-19: Only custom map markers are draggable**
+    Recommendation markers are now fixed-position so ranked destination pins stay consistent for all users, while custom markers remain draggable for collaborative place annotation. This keeps generated recommendations stable while preserving map editing for user-added locations.
 
 23. **2026-04-14: Airport fallback searches for nearby airports when destination lacks one**
     The `searchAirport()` function now performs a secondary search for nearby airports when the initial query returns a non-airport result (city, town, etc.). When searching "[city] airport" returns an airport result, that airport is used for flight search instead of falling back to a non-airport entity. If no nearby airport is found, the city/town result is used as-is, allowing flight searches to fail gracefully if Flights Sky has no airport mappings for that region.
+
+24. **2026-04-17: Trip map markers persist as collaborative trip state**
+    Marker coordinates now persist in a dedicated `trip_map_markers` table (instead of local-only UI state), with trip-scoped RPCs for upsert/list and Supabase Realtime publication enabled for websocket sync. Destination markers use their destination id as marker id for stable coordinate overrides, and users can also add custom markers with generated ids so non-catalog locations can be shared and moved collaboratively across all trip members.
+
+25. **2026-04-20: Compare labels use canonical destination data, not map-marker overrides**
+    Planner compare entries now keep city/state labels from persisted destination records (`trip_compare_destinations` + `destinations`) and ignore legacy `trip_map_markers` rows tied to `source_destination_id`. Marker syncing is treated as custom-marker-only state so stale recommendation-marker geocode rows cannot randomly rename compare options across reloads.
+
+26. **2026-04-20: Custom marker compare selections persist in a dedicated trip-scoped table**
+    Compare entries for user-added markers now persist via `trip_custom_compare_markers` with dedicated RPCs, instead of broadcast-only local state. This keeps custom compare choices stable across reloads and sessions while preserving destination-compare persistence in `trip_compare_destinations`.
+
+27. **2026-04-20: Voting accepts custom marker compare entries**
+    Vote persistence now supports both canonical destination ids and custom marker ids, with custom votes stored in `trip_custom_marker_votes` and startup hydration returning a unified vote list across both tables. This keeps compare voting behavior consistent when users include custom map locations.
+
+28. **2026-04-20: Compare voting cards reconcile live destination updates by id**
+    Compare screen card state now merges incoming destination prop changes (including custom-marker city/state/coordinate updates) into existing cards while preserving per-card flight/hotel selections. This prevents stale marker details in active voting sessions when teammates move custom markers.
+
+29. **2026-04-20: Moving a custom marker invalidates existing votes for that marker**
+    When a custom marker's coordinates change, the database now clears votes tied to that marker id so prior votes do not carry over to a materially different location. This preserves vote meaning by binding it to a specific marker position rather than only to marker identity.
+
+30. **2026-04-20: Custom marker move events clear local vote state immediately**
+    Planner marker-upsert handling now detects coordinate changes on custom markers and clears local votes for that marker id immediately, instead of waiting solely on vote-table realtime deletes. This prevents stale "voted" UI state for other users after a marker move.

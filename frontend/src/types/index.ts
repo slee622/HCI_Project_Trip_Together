@@ -84,6 +84,8 @@ export interface CompareDestination {
   state: string;
   category: string;
   priceRange: string;
+  latitude?: number;
+  longitude?: number;
 }
 
 // ============================================
@@ -142,4 +144,12 @@ export interface TripEstimateRequest {
 
 export interface RecommendationWithEstimate extends RecommendationResult {
   estimate?: TripEstimate;
+}
+
+export interface CustomMapMarker {
+  id: string;
+  city: string;
+  state: string;
+  latitude: number;
+  longitude: number;
 }
