@@ -30,6 +30,7 @@ import {
   listTripMapMarkers,
   StartupCompareOption,
   StartupCustomCompareMarker,
+  StartupDestination,
   StartupGroupMember,
   StartupTripMapMarker,
   StartupPreference,
@@ -49,6 +50,7 @@ import {
   saveTripPreferences,
   saveTripRecommendations,
   saveTripVote,
+  fetchTripVotes,
 } from '../services/tripStatePersistence';
 import { getRealtimeClient, removeRealtimeChannel } from '../services/realtime';
 
@@ -207,7 +209,8 @@ const DEFAULT_TRIP = {
 
 // Debounce delay for fetching recommendations after preference changes (ms)
 const DEBOUNCE_DELAY = 300;
-const MEMBER_COLOR_PALETTE = ['#4A90D9', '#5C6AC4', '#2D9CDB', '#27AE60', '#E67E22', '#EB5757'];
+// const MEMBER_COLOR_PALETTE = ['#4A90D9', '#5C6AC4', '#2D9CDB', '#27AE60', '#E67E22', '#EB5757'];
+export const MEMBER_COLOR_PALETTE = ['#4A90D9', '#27AE60', '#E67E22', '#EB5757', '#9B59B6', '#F1C40F'];
 
 interface TripPreferenceRealtimeRow {
   user_id: string;
@@ -248,6 +251,11 @@ interface TripVoteBroadcastPayload {
   userId: string;
   vote?: -1 | 1;
   updatedAt?: string;
+}
+
+interface TripVotingDoneBroadcastPayload {
+  userId: string;
+  updatedAt: string;
 }
 
 interface TripCompareBroadcastPayload {
@@ -319,17 +327,22 @@ function mapStartupRecommendations(
 }
 
 function mapCompareOptionsToCompareDestinations(
-  options: StartupCompareOption[]
+  options: StartupCompareOption[],
+  recsByDestId: Map<string, RecommendationWithEstimate>
 ): CompareDestination[] {
   return options.map((option) => {
     const description = option.destination.shortDescription || 'Saved destination';
     const category = description.split('.')[0].trim() || 'Saved destination';
+    const rec = recsByDestId.get(option.destinationId);
+    const priceRange = rec?.estimate
+      ? `$${rec.estimate.low}-${rec.estimate.high}/person`
+      : 'Price TBD';
     return {
       id: option.destinationId,
       city: option.destination.city,
       state: option.destination.state,
       category,
-      priceRange: 'Price TBD',
+      priceRange,
     };
   });
 }
@@ -349,19 +362,21 @@ function mapCustomCompareMarkersToCompareDestinations(
 }
 
 function mapGroupMembersToCompareUsers(
-  members: StartupGroupMember[]
+  members: StartupGroupMember[],
+  colorMap: Map<string, string>
 ): Array<{ id: string; initial: string; color: string; preferences?: Record<string, number> }> {
-  return members.map((member, index) => ({
+  return members.map((member) => ({
     id: member.userId,
     initial: (member.displayName || member.handle || 'U').trim().charAt(0).toUpperCase(),
-    color: MEMBER_COLOR_PALETTE[index % MEMBER_COLOR_PALETTE.length],
+    color: colorMap.get(member.userId) ?? MEMBER_COLOR_PALETTE[0],
   }));
 }
 
 function buildPreferenceMarkerByDimension(
   members: StartupGroupMember[],
   preferences: StartupPreference[],
-  currentUserId?: string
+  currentUserId?: string,
+  colorMap?: Map<string, string>
 ): Record<SliderDimension, SliderMemberMarker[]> {
   const markersByDimension: Record<SliderDimension, SliderMemberMarker[]> = {
     adventure: [],
@@ -386,7 +401,7 @@ function buildPreferenceMarkerByDimension(
     const markerBase = {
       userId: member.userId,
       initial: (member.displayName || member.handle || 'U').trim().charAt(0).toUpperCase(),
-      color: MEMBER_COLOR_PALETTE[index % MEMBER_COLOR_PALETTE.length],
+      color: colorMap?.get(member.userId) ?? MEMBER_COLOR_PALETTE[index % MEMBER_COLOR_PALETTE.length],
       label: member.displayName || member.handle || 'User',
     };
 
@@ -413,12 +428,81 @@ function buildFallbackGroupMember(userId: string): StartupGroupMember {
   };
 }
 
+const CUSTOM_MARKER_PREFIX = 'custom-';
+
 function generateCustomMarkerId(): string {
-  return `custom-${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+  return `${CUSTOM_MARKER_PREFIX}${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-function isCustomMarkerId(id: string): boolean {
-  return id.startsWith('custom-');
+function isCustomMarkerId(markerId: string): boolean {
+  return markerId.startsWith(CUSTOM_MARKER_PREFIX);
+}
+
+// ============================================
+// WINNER COMPUTATION (votes + preference tiebreaker)
+// ============================================
+
+export interface WinnerInfo {
+  destinationId: string;
+  city: string;
+  state: string;
+  isTiebroken: boolean;
+}
+
+function computeWinner(
+  compareList: CompareDestination[],
+  votes: StartupVote[],
+  destinationAttributes: Map<string, StartupDestination>,
+  preferences: StartupPreference[]
+): WinnerInfo | null {
+  if (compareList.length === 0 || votes.length === 0) return null;
+
+  const voteCounts = new Map<string, number>();
+  for (const vote of votes) {
+    if (vote.vote === 1) {
+      voteCounts.set(vote.destinationId, (voteCounts.get(vote.destinationId) ?? 0) + 1);
+    }
+  }
+
+  if (voteCounts.size === 0) return null;
+
+  const maxVotes = Math.max(...voteCounts.values());
+  const tied = [...voteCounts.entries()]
+    .filter(([, count]) => count === maxVotes)
+    .map(([id]) => id);
+
+  let winnerId: string;
+  let isTiebroken = false;
+
+  if (tied.length === 1) {
+    winnerId = tied[0];
+  } else {
+    isTiebroken = true;
+    let bestScore = -Infinity;
+    let bestId = tied[0];
+    for (const destId of tied) {
+      const dest = destinationAttributes.get(destId);
+      if (!dest) continue;
+      let score = 0;
+      for (const pref of preferences) {
+        score +=
+          (pref.adventure * dest.natureScore +
+            pref.budget * dest.budgetScore +
+            pref.setting * dest.urbanScore) /
+          3;
+      }
+      if (score > bestScore) {
+        bestScore = score;
+        bestId = destId;
+      }
+    }
+    winnerId = bestId;
+  }
+
+  const dest = destinationAttributes.get(winnerId) ?? compareList.find((d) => d.id === winnerId);
+  if (!dest) return null;
+
+  return { destinationId: winnerId, city: dest.city, state: dest.state, isTiebroken };
 }
 
 export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
@@ -441,6 +525,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
 
   const activeTrip = useMemo(() => tripDetails || DEFAULT_TRIP, [tripDetails]);
   const skipNextAutoFetchRef = useRef(Boolean((scopedStartupState?.recommendations || []).length));
+  const recommendationsRef = useRef<RecommendationWithEstimate[]>([]);
 
   // User preferences (5 sliders)
   const [preferences, setPreferences] = useState<UserPreferences>(() =>
@@ -452,12 +537,13 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
 
   // Stage navigation
   const [stage, setStage] = useState<TripStage>('preferences');
-  const [votedDestinationIds, setVotedDestinationIds] = useState<string[]>([]);
+  // const [votedDestinationIds, setVotedDestinationIds] = useState<string[]>([]);
 
   // Recommendations from API
   const [recommendations, setRecommendations] = useState<RecommendationWithEstimate[]>(() =>
     mapStartupRecommendations(scopedStartupState?.recommendations)
   );
+  recommendationsRef.current = recommendations;
   const [loading, setLoading] = useState(false);
   const [selectedDestinationId, setSelectedDestinationId] = useState<string | null>(
     scopedStartupState?.selectedOption?.destinationId || null
@@ -471,30 +557,86 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   const [votes, setVotes] = useState<StartupVote[]>(scopedStartupState?.votes || []);
   const [tripMapMarkers, setTripMapMarkers] = useState<StartupTripMapMarker[]>([]);
   const tripMapMarkersRef = useRef<StartupTripMapMarker[]>([]);
+  const [doneUserIds, setDoneUserIds] = useState<Set<string>>(new Set());
+  const userColorMap = useMemo<Map<string, string>>(() => {
+    const map = new Map<string, string>();
+    groupMembers.forEach((member, index) => {
+      map.set(member.userId, MEMBER_COLOR_PALETTE[index % MEMBER_COLOR_PALETTE.length]);
+    });
+    return map;
+  }, [groupMembers]);
   const compareUsers = useMemo(
-    () => mapGroupMembersToCompareUsers(groupMembers),
-    [groupMembers]
+    () => mapGroupMembersToCompareUsers(groupMembers, userColorMap),
+    [groupMembers, userColorMap]
   );
   const memberPreferenceMarkers = useMemo(
     () =>
       buildPreferenceMarkerByDimension(
         groupMembers,
         livePreferences,
-        currentUserId
+        currentUserId,
+        userColorMap
       ),
-    [groupMembers, livePreferences, currentUserId]
+    [groupMembers, livePreferences, currentUserId, userColorMap]
   );
-  const customMapMarkers = useMemo<CustomMapMarker[]>(
+  const destinationAttributes = useMemo<Map<string, StartupDestination>>(() => {
+    const map = new Map<string, StartupDestination>();
+    for (const rec of scopedStartupState?.recommendations ?? []) {
+      map.set(rec.destination.id, rec.destination);
+    }
+    return map;
+  }, [scopedStartupState]);
+  const winner = useMemo<WinnerInfo | null>(() => {
+    if (stage !== 'voted') return null;
+    return computeWinner(compareList, votes, destinationAttributes, livePreferences);
+  }, [stage, compareList, votes, destinationAttributes, livePreferences]);
+  const currentUserDone = Boolean(currentUserId && doneUserIds.has(currentUserId));
+  const currentUserHasVoted = Boolean(currentUserId && votes.some((v) => v.userId === currentUserId));
+
+  // Guard against running the DB-fetch+transition more than once
+  const transitioningRef = useRef(false);
+
+  // When all members are done, re-fetch canonical votes from DB so every
+  // client computes the winner from the same authoritative data, then flip
+  // to 'voted'. Using local realtime state alone causes divergence because
+  // different clients may have processed different subsets of vote broadcasts
+  // at the moment they each decide to transition.
+  useEffect(() => {
+    if (stage === 'voted') return;
+    if (doneUserIds.size === 0) return;
+    const totalVoters = Math.max(groupMembers.length, 1);
+    if (doneUserIds.size < totalVoters) return;
+    if (transitioningRef.current) return;
+
+    transitioningRef.current = true;
+
+    const transition = async () => {
+      if (tripSessionId) {
+        try {
+          const freshVotes = await fetchTripVotes(tripSessionId);
+          setVotes(
+            freshVotes.map((v) => ({
+              destinationId: v.destinationId,
+              userId: v.userId,
+              vote: v.vote,
+              updatedAt: v.updatedAt,
+            }))
+          );
+        } catch (err) {
+          console.warn('fetchTripVotes failed; using local vote state:', err);
+        }
+      }
+      setStage('voted');
+    };
+
+    void transition();
+  }, [doneUserIds, groupMembers.length, stage, tripSessionId]);
+
+  const customMapMarkers = useMemo(
     () =>
       tripMapMarkers
-        .filter((marker) => !marker.sourceDestinationId)
-        .map((marker) => ({
-          id: marker.markerId,
-          city: marker.city,
-          state: marker.state,
-          latitude: marker.latitude,
-          longitude: marker.longitude,
-        })),
+        .filter((m) => !m.sourceDestinationId)
+        .map((m) => ({ id: m.markerId, city: m.city, state: m.state, latitude: m.latitude, longitude: m.longitude })),
     [tripMapMarkers]
   );
   const tripRealtimeChannelRef = useRef<RealtimeChannel | null>(null);
@@ -615,7 +757,6 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
 
     if (customMarkerMoved) {
       setVotes((prev) => prev.filter((vote) => vote.destinationId !== marker.markerId));
-      setVotedDestinationIds((prev) => prev.filter((id) => id !== marker.markerId));
     }
   }, []);
 
@@ -716,45 +857,19 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     });
   }, [tripSessionId, selectedDestinationId]);
 
-  useEffect(() => {
+  const loadCompareDestinations = useCallback(() => {
     if (!tripSessionId) {
       setCompareList([]);
       return;
     }
-    Promise.all([
-      listTripCompareDestinations(tripSessionId),
-      listTripCustomCompareMarkers(tripSessionId),
-    ])
-      .then(([destinationItems, customMarkerItems]) => {
-        setCompareList([
-          ...mapCompareOptionsToCompareDestinations(destinationItems),
-          ...mapCustomCompareMarkersToCompareDestinations(customMarkerItems),
-        ]);
-      })
-      .catch((error) => {
-        console.warn('Failed to load compare destinations:', error);
-      });
-  }, [tripSessionId]);
-
-  useEffect(() => {
-    if (!tripSessionId) {
-      setTripMapMarkers([]);
-      return;
-    }
-
-    setTripMapMarkers([]);
-    loadTripMapMarkers();
-  }, [tripSessionId, loadTripMapMarkers]);
-
-  const loadCompareDestinations = useCallback(() => {
-    if (!tripSessionId) return;
+    const recsByDestId = new Map(recommendationsRef.current.map((r) => [r.id, r]));
     return Promise.all([
       listTripCompareDestinations(tripSessionId),
       listTripCustomCompareMarkers(tripSessionId),
     ])
       .then(([destinationItems, customMarkerItems]) => {
         setCompareList([
-          ...mapCompareOptionsToCompareDestinations(destinationItems),
+          ...mapCompareOptionsToCompareDestinations(destinationItems, recsByDestId),
           ...mapCustomCompareMarkersToCompareDestinations(customMarkerItems),
         ]);
       })
@@ -762,6 +877,14 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
         console.warn('Failed to load compare destinations:', error);
       });
   }, [tripSessionId]);
+
+  useEffect(() => {
+    loadCompareDestinations();
+  }, [loadCompareDestinations]);
+
+  useEffect(() => {
+    loadTripMapMarkers();
+  }, [loadTripMapMarkers]);
 
   const ensureGroupMember = useCallback((userId: string): void => {
     if (!userId) return;
@@ -808,9 +931,6 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
           (vote) => !(vote.destinationId === row.destination_id && vote.userId === row.user_id)
         )
       );
-      if (currentUserId && row.user_id === currentUserId) {
-        setVotedDestinationIds((prev) => prev.filter((id) => id !== row.destination_id));
-      }
       return;
     }
     ensureGroupMember(row.user_id);
@@ -833,15 +953,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       next[index] = mapped;
       return next;
     });
-
-    if (currentUserId && row.user_id === currentUserId) {
-      if (row.vote === 1) {
-        setVotedDestinationIds((prev) => [...prev.filter((id) => id !== row.destination_id), row.destination_id]);
-      } else {
-        setVotedDestinationIds((prev) => prev.filter((id) => id !== row.destination_id));
-      }
-    }
-  }, [ensureGroupMember, currentUserId]);
+  }, [ensureGroupMember]);
 
   useEffect(() => {
     if (!tripSessionId) return;
@@ -958,6 +1070,16 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
                 },
                 'DELETE'
               );
+            }
+          )
+          .on(
+            'broadcast',
+            { event: 'trip_voting_done' },
+            ({ payload }) => {
+              if (!active) return;
+              const data = payload as TripVotingDoneBroadcastPayload;
+              if (!data?.userId) return;
+              setDoneUserIds((prev) => new Set([...prev, data.userId]));
             }
           )
           .on(
@@ -1448,18 +1570,17 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   }, [stage, compareList.length]);
 
 
-  // Handle vote from compare screen
+  // Handle vote from compare screen — allows voting for multiple destinations
   const handleVote = useCallback(async (destinationId: string, removeVote = false) => {
     console.log('Voted for destination:', destinationId);
 
     if (!tripSessionId || !currentUserId) {
       console.warn('Missing trip session or user id, skipping vote persistence');
-      if (!removeVote) {
-        setVotedDestinationIds((prev) => [...prev.filter((id) => id !== destinationId), destinationId]);
-        setStage('voted');
-      } else {
-        setVotedDestinationIds((prev) => prev.filter((id) => id !== destinationId));
-      }
+      // if (!removeVote) {
+      //   setVotedDestinationIds((prev) => [...prev.filter((id) => id !== destinationId), destinationId]);
+      // } else {
+      //   setVotedDestinationIds((prev) => prev.filter((id) => id !== destinationId));
+      // }
       return;
     }
 
@@ -1476,7 +1597,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
             (vote) => !(vote.destinationId === destinationId && vote.userId === currentUserId)
           )
         );
-        setVotedDestinationIds((prev) => prev.filter((id) => id !== destinationId));
+        // setVotedDestinationIds((prev) => prev.filter((id) => id !== destinationId));
         return;
       }
 
@@ -1499,14 +1620,23 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
         }
         return [...prev, { destinationId, userId: currentUserId, vote: 1, updatedAt: nowIso }];
       });
-      setVotedDestinationIds((prev) => [...prev.filter((id) => id !== destinationId), destinationId]);
-      setStage('voted');
+      // setVotedDestinationIds((prev) => [...prev.filter((id) => id !== destinationId), destinationId]);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Failed to save vote';
       console.warn('Failed to persist vote:', error);
       Alert.alert('Vote failed', message);
     }
   }, [tripSessionId, currentUserId, broadcastTripEvent]);
+
+  // Mark current user as done voting; when all members are done the stage transitions to 'voted'
+  const handleDoneVoting = useCallback(async () => {
+    if (!currentUserId) return;
+    setDoneUserIds((prev) => new Set([...prev, currentUserId]));
+    await broadcastTripEvent('trip_voting_done', {
+      userId: currentUserId,
+      updatedAt: new Date().toISOString(),
+    });
+  }, [currentUserId, broadcastTripEvent]);
 
   // Check if destination is in compare list
   const isInCompareList = useCallback(
@@ -1593,10 +1723,16 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
           voteMembers={groupMembers}
           votes={votes}
           currentUserId={currentUserId}
+          userColorMap={userColorMap}
           onBack={() => setStage('preferences')}
           onVote={handleVote}
           locked={isLocked}
-          votedDestinationIds={votedDestinationIds}
+          // votedDestinationIds={votedDestinationIds}
+          winner={winner}
+          doneUserIds={doneUserIds}
+          onDoneVoting={handleDoneVoting}
+          currentUserDone={currentUserDone}
+          currentUserHasVoted={currentUserHasVoted}
         />
       )}
     </View>

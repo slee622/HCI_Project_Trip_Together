@@ -184,39 +184,16 @@ export async function removeCompareDestination(
   );
 }
 
-export async function saveCustomCompareMarker(
-  tripSessionId: string,
-  markerId: string
-): Promise<void> {
-  const session = await requireSession();
-  await callRpc<null>(
-    'upsert_trip_custom_compare_marker',
-    {
-      p_trip_session_id: tripSessionId,
-      p_marker_id: markerId,
-    },
-    session
-  );
-}
-
-export async function removeCustomCompareMarker(
-  tripSessionId: string,
-  markerId: string
-): Promise<void> {
-  const session = await requireSession();
-  await callRpc<null>(
-    'remove_trip_custom_compare_marker',
-    {
-      p_trip_session_id: tripSessionId,
-      p_marker_id: markerId,
-    },
-    session
-  );
-}
-
 export async function saveTripMapMarker(
   tripSessionId: string,
-  marker: PersistedTripMapMarker
+  marker: {
+    markerId: string;
+    sourceDestinationId?: string | null;
+    city: string;
+    state: string;
+    latitude: number;
+    longitude: number;
+  }
 ): Promise<void> {
   const session = await requireSession();
   await callRpc<null>(
@@ -247,4 +224,78 @@ export async function removeTripMapMarker(
     },
     session
   );
+}
+
+export async function saveCustomCompareMarker(
+  tripSessionId: string,
+  markerId: string
+): Promise<void> {
+  const session = await requireSession();
+  await callRpc<null>(
+    'upsert_trip_custom_compare_marker',
+    {
+      p_trip_session_id: tripSessionId,
+      p_marker_id: markerId,
+    },
+    session
+  );
+}
+
+export async function removeCustomCompareMarker(
+  tripSessionId: string,
+  markerId: string
+): Promise<void> {
+  const session = await requireSession();
+  await callRpc<null>(
+    'remove_trip_custom_compare_marker',
+    {
+      p_trip_session_id: tripSessionId,
+      p_marker_id: markerId,
+    },
+    session
+  );
+}
+
+export interface PersistedVote {
+  destinationId: string;
+  userId: string;
+  vote: -1 | 1;
+  updatedAt: string;
+}
+
+export async function fetchTripVotes(tripSessionId: string): Promise<PersistedVote[]> {
+  assertConfig();
+  const session = await requireSession();
+
+  const url =
+    `${SUPABASE_URL}/rest/v1/trip_destination_votes` +
+    `?trip_session_id=eq.${encodeURIComponent(tripSessionId)}` +
+    `&select=destination_id,user_id,vote,updated_at`;
+
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      apikey: SUPABASE_ANON_KEY,
+      Authorization: `Bearer ${session.accessToken}`,
+      Accept: 'application/json',
+    },
+  });
+
+  if (!response.ok) {
+    throw new Error(`Failed to fetch votes (${response.status})`);
+  }
+
+  const rows: Array<{
+    destination_id: string;
+    user_id: string;
+    vote: -1 | 1;
+    updated_at: string;
+  }> = await response.json();
+
+  return rows.map((row) => ({
+    destinationId: row.destination_id,
+    userId: row.user_id,
+    vote: row.vote,
+    updatedAt: row.updated_at,
+  }));
 }

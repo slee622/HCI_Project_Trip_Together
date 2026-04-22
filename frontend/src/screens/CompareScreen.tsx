@@ -14,9 +14,14 @@ import {
   Modal,
   ActivityIndicator,
   Platform,
+  Dimensions,
 } from 'react-native';
+import ConfettiCannon from 'react-native-confetti-cannon';
 import { CompareDestination } from '../types';
 import { searchFlights, searchHotels, FlightOption, HotelOption } from '../services/api';
+import { WinnerInfo, MEMBER_COLOR_PALETTE } from './TripPlannerScreen';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 // ============================================
 // TYPES
@@ -68,13 +73,17 @@ interface CompareScreenProps {
   voteMembers?: VoteMember[];
   votes?: DestinationVote[];
   currentUserId?: string;
+  userColorMap?: Map<string, string>;
   onBack: () => void;
   onVote: (destinationId: string, removeVote?: boolean) => void;
   locked?: boolean;
   votedDestinationIds?: string[];
+  winner?: WinnerInfo | null;
+  doneUserIds?: Set<string>;
+  onDoneVoting?: () => void;
+  currentUserDone?: boolean;
+  currentUserHasVoted?: boolean;
 }
-
-const VOTER_COLORS = ['#4A90D9', '#5C6AC4', '#2D9CDB', '#27AE60', '#E67E22', '#EB5757'];
 
 function initialFromLabel(label: string): string {
   const normalized = (label || '').trim();
@@ -83,7 +92,7 @@ function initialFromLabel(label: string): string {
 
 function colorFromUserId(userId: string): string {
   const hash = userId.split('').reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
-  return VOTER_COLORS[hash % VOTER_COLORS.length];
+  return MEMBER_COLOR_PALETTE[hash % MEMBER_COLOR_PALETTE.length];
 }
 
 // ============================================
@@ -350,7 +359,8 @@ interface DestinationCardProps {
   onViewHotels: () => void;
   onVote: () => void;
   locked?: boolean;
-  isVoted?: boolean;
+  // isVoted?: boolean;
+  currentUserDone?: boolean;
 }
 
 const DestinationCard: React.FC<DestinationCardProps> = ({
@@ -363,8 +373,10 @@ const DestinationCard: React.FC<DestinationCardProps> = ({
   onViewHotels,
   onVote,
   locked = false,
-  isVoted = false,
+  // isVoted = false,
+  currentUserDone = false,
 }) => {
+  const voteDisabled = locked || currentUserDone;
   // Calculate nights
   const calculateNights = () => {
     const start = new Date(tripDetails.departureDate);
@@ -535,10 +547,20 @@ const DestinationCard: React.FC<DestinationCardProps> = ({
       {/* Vote button — pinned at bottom of card */}
       <View style={styles.voteButtonWrapper}>
         <TouchableOpacity
-          style={[styles.voteButton, hasCurrentUserVoted && styles.removeVoteButton]}
+          style={[
+            styles.voteButton,
+            hasCurrentUserVoted && !voteDisabled && styles.removeVoteButton,
+            hasCurrentUserVoted && voteDisabled && styles.voteButtonVoted,
+            !hasCurrentUserVoted && voteDisabled && styles.voteButtonLocked,
+          ]}
           onPress={onVote}
+          disabled={voteDisabled}
         >
-          <Text style={[styles.voteButtonText, hasCurrentUserVoted && styles.removeVoteButtonText]}>
+          <Text style={[
+            styles.voteButtonText,
+            hasCurrentUserVoted && !voteDisabled && styles.removeVoteButtonText,
+            voteDisabled && styles.voteButtonLockedText,
+          ]}>
             {hasCurrentUserVoted ? 'REMOVE VOTE' : 'VOTE'}
           </Text>
         </TouchableOpacity>
@@ -546,6 +568,493 @@ const DestinationCard: React.FC<DestinationCardProps> = ({
     </View>
   );
 };
+
+// ============================================
+// WINNER REVEAL
+// ============================================
+
+interface WinnerRevealProps {
+  winner: WinnerInfo;
+  winnerDestination: DestinationWithSelections | undefined;
+  votes: DestinationVote[];
+  voteMembers: VoteMember[];
+  userColorMap?: Map<string, string>;
+  tripDetails: {
+    origin: string;
+    departureDate: string;
+    returnDate: string;
+    travelers: number;
+  };
+  onViewDepartureFlight: () => void;
+  onViewReturnFlight: () => void;
+  onViewHotels: () => void;
+}
+
+const WinnerReveal: React.FC<WinnerRevealProps> = ({
+  winner,
+  winnerDestination,
+  votes,
+  voteMembers,
+  userColorMap,
+  tripDetails,
+  onViewDepartureFlight,
+  onViewReturnFlight,
+  onViewHotels,
+}) => {
+  const winnerVoteCount = votes.filter(
+    (v) => v.destinationId === winner.destinationId && v.vote === 1
+  ).length;
+
+  const nights = useMemo(() => {
+    const start = new Date(tripDetails.departureDate);
+    const end = new Date(tripDetails.returnDate);
+    return Math.max(1, Math.ceil((end.getTime() - start.getTime()) / (1000 * 60 * 60 * 24)));
+  }, [tripDetails.departureDate, tripDetails.returnDate]);
+
+  const prices = useMemo(() => {
+    let departureFlightTotal = 0;
+    let returnFlightTotal = 0;
+    let hotelTotal = 0;
+    if (winnerDestination?.selectedDepartureFlight) {
+      departureFlightTotal = winnerDestination.selectedDepartureFlight.price * tripDetails.travelers;
+    }
+    if (winnerDestination?.selectedReturnFlight) {
+      returnFlightTotal = winnerDestination.selectedReturnFlight.price * tripDetails.travelers;
+    }
+    if (winnerDestination?.selectedHotel) {
+      hotelTotal = winnerDestination.selectedHotel.nightlyRate * nights;
+    }
+    return { departureFlightTotal, returnFlightTotal, hotelTotal };
+  }, [winnerDestination, tripDetails.travelers, nights]);
+
+  return (
+    <View style={revealStyles.root}>
+      {/* Confetti overlay — fires automatically on mount */}
+      <View style={StyleSheet.absoluteFill} pointerEvents="none">
+        <ConfettiCannon
+          count={160}
+          origin={{ x: -10, y: 0 }}
+          autoStart
+          autoStartDelay={200}
+          fadeOut
+        />
+        <ConfettiCannon
+          count={160}
+          origin={{ x: SCREEN_WIDTH + 10, y: 0 }}
+          autoStart
+          autoStartDelay={350}
+          fadeOut
+        />
+      </View>
+
+      <ScrollView
+        contentContainerStyle={revealStyles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        {/* Trophy + eyebrow */}
+        <Text style={revealStyles.trophy}>🏆</Text>
+        <Text style={revealStyles.eyebrow}>YOUR GROUP IS GOING TO</Text>
+
+        {/* Hero card */}
+        <View style={revealStyles.heroCard}>
+          {winnerDestination?.category ? (
+            <Text style={revealStyles.heroCategory}>
+              {winnerDestination.category.toUpperCase()}
+            </Text>
+          ) : null}
+
+          <Text style={revealStyles.heroCity}>{winner.city}</Text>
+          <Text style={revealStyles.heroState}>{winner.state}</Text>
+
+          <View style={revealStyles.heroDivider} />
+
+          <Text style={revealStyles.heroPrice}>
+            {winnerDestination?.priceRange ?? 'Price TBD'}
+          </Text>
+
+          <View style={revealStyles.heroVotePill}>
+            <Text style={revealStyles.heroVotePillText}>
+              {winnerVoteCount} {winnerVoteCount === 1 ? 'vote' : 'votes'}
+            </Text>
+          </View>
+        </View>
+
+        {/* Group summary */}
+        <View style={revealStyles.groupSummary}>
+          {winner.isTiebroken && (
+            <View style={[revealStyles.tiebreakBadge, { marginBottom: 16 }]}>
+              <Text style={revealStyles.tiebreakText}>
+                ★  Best preference match for your group
+              </Text>
+            </View>
+          )}
+
+          {/* Preference bars */}
+          {winnerDestination?.userBars && winnerDestination.userBars.length > 0 && (
+            <View style={revealStyles.prefBarsSection}>
+              <Text style={revealStyles.prefBarsLabel}>PREFERENCE MATCH</Text>
+              {winnerDestination.userBars.map((bar) => (
+                <View key={bar.userId} style={revealStyles.prefBarRow}>
+                  <View style={[revealStyles.prefBarDot, { backgroundColor: bar.color }]}>
+                    <Text style={revealStyles.prefBarInitial}>{bar.initial}</Text>
+                  </View>
+                  <View style={revealStyles.prefBarTrack}>
+                    <View
+                      style={[
+                        revealStyles.prefBarFill,
+                        { width: `${(bar.value / 10) * 100}%` as unknown as number, backgroundColor: bar.color },
+                      ]}
+                    />
+                  </View>
+                  <Text style={revealStyles.prefBarValue}>{Math.round(bar.value * 10)}%</Text>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
+        {/* Travel sections */}
+        <View style={revealStyles.travelCard}>
+          {/* Outbound Flight */}
+          <View style={revealStyles.travelSection}>
+            <View style={revealStyles.travelRow}>
+              <Text style={revealStyles.travelLabel}>OUTBOUND FLIGHT</Text>
+              <TouchableOpacity
+                style={[revealStyles.viewButton, winnerDestination?.selectedDepartureFlight && revealStyles.viewButtonSelected]}
+                onPress={onViewDepartureFlight}
+              >
+                <Text style={[revealStyles.viewButtonText, winnerDestination?.selectedDepartureFlight && revealStyles.viewButtonTextSelected]}>
+                  {winnerDestination?.selectedDepartureFlight ? 'CHANGE' : 'VIEW'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {winnerDestination?.selectedDepartureFlight ? (
+              <View style={revealStyles.selectedContainer}>
+                <Text style={revealStyles.selectedAirline}>{winnerDestination.selectedDepartureFlight.airline}</Text>
+                <Text style={revealStyles.selectedDetails}>
+                  {winnerDestination.selectedDepartureFlight.departureTime || '--:--'} · {winnerDestination.selectedDepartureFlight.stops === 0 ? 'Nonstop' : `${winnerDestination.selectedDepartureFlight.stops} stop${(winnerDestination.selectedDepartureFlight.stops || 0) > 1 ? 's' : ''}`}
+                </Text>
+                <Text style={revealStyles.selectedPrice}>
+                  ${winnerDestination.selectedDepartureFlight.price} × {tripDetails.travelers} = ${prices.departureFlightTotal}
+                </Text>
+              </View>
+            ) : (
+              <Text style={revealStyles.noSelectionText}>No outbound flight selected</Text>
+            )}
+          </View>
+
+          <View style={revealStyles.travelDivider} />
+
+          {/* Return Flight */}
+          <View style={revealStyles.travelSection}>
+            <View style={revealStyles.travelRow}>
+              <Text style={revealStyles.travelLabel}>RETURN FLIGHT</Text>
+              <TouchableOpacity
+                style={[revealStyles.viewButton, winnerDestination?.selectedReturnFlight && revealStyles.viewButtonSelected]}
+                onPress={onViewReturnFlight}
+              >
+                <Text style={[revealStyles.viewButtonText, winnerDestination?.selectedReturnFlight && revealStyles.viewButtonTextSelected]}>
+                  {winnerDestination?.selectedReturnFlight ? 'CHANGE' : 'VIEW'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {winnerDestination?.selectedReturnFlight ? (
+              <View style={revealStyles.selectedContainer}>
+                <Text style={revealStyles.selectedAirline}>{winnerDestination.selectedReturnFlight.airline}</Text>
+                <Text style={revealStyles.selectedDetails}>
+                  {winnerDestination.selectedReturnFlight.departureTime || '--:--'} · {winnerDestination.selectedReturnFlight.stops === 0 ? 'Nonstop' : `${winnerDestination.selectedReturnFlight.stops} stop${(winnerDestination.selectedReturnFlight.stops || 0) > 1 ? 's' : ''}`}
+                </Text>
+                <Text style={revealStyles.selectedPrice}>
+                  ${winnerDestination.selectedReturnFlight.price} × {tripDetails.travelers} = ${prices.returnFlightTotal}
+                </Text>
+              </View>
+            ) : (
+              <Text style={revealStyles.noSelectionText}>No return flight selected</Text>
+            )}
+          </View>
+
+          <View style={revealStyles.travelDivider} />
+
+          {/* Hotel */}
+          <View style={revealStyles.travelSection}>
+            <View style={revealStyles.travelRow}>
+              <Text style={revealStyles.travelLabel}>HOTEL</Text>
+              <TouchableOpacity
+                style={[revealStyles.viewButton, winnerDestination?.selectedHotel && revealStyles.viewButtonSelected]}
+                onPress={onViewHotels}
+              >
+                <Text style={[revealStyles.viewButtonText, winnerDestination?.selectedHotel && revealStyles.viewButtonTextSelected]}>
+                  {winnerDestination?.selectedHotel ? 'CHANGE' : 'VIEW'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+            {winnerDestination?.selectedHotel ? (
+              <View style={revealStyles.selectedContainer}>
+                <Text style={revealStyles.selectedAirline}>{winnerDestination.selectedHotel.name}</Text>
+                <Text style={revealStyles.selectedDetails}>
+                  ★ {winnerDestination.selectedHotel.rating.toFixed(1)} · {winnerDestination.selectedHotel.amenities?.slice(0, 2).join(', ') || 'Standard'}
+                </Text>
+                <Text style={revealStyles.selectedPrice}>
+                  ${winnerDestination.selectedHotel.nightlyRate}/night × {nights} = ${prices.hotelTotal}
+                </Text>
+              </View>
+            ) : (
+              <Text style={revealStyles.noSelectionText}>No hotel selected</Text>
+            )}
+          </View>
+        </View>
+      </ScrollView>
+    </View>
+  );
+};
+
+const revealStyles = StyleSheet.create({
+  root: {
+    flex: 1,
+    backgroundColor: '#1A1A2E',
+  },
+  scrollContent: {
+    alignItems: 'center',
+    paddingVertical: 40,
+    paddingHorizontal: 24,
+    paddingBottom: 60,
+  },
+  trophy: {
+    fontSize: 72,
+    marginBottom: 8,
+    textAlign: 'center',
+  },
+  eyebrow: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#8899AA',
+    letterSpacing: 2.5,
+    marginBottom: 28,
+    textAlign: 'center',
+  },
+  heroCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 24,
+    paddingVertical: 40,
+    paddingHorizontal: 36,
+    alignItems: 'center',
+    width: '100%',
+    maxWidth: 480,
+    shadowColor: '#F5C842',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.4,
+    shadowRadius: 24,
+    elevation: 12,
+    marginBottom: 28,
+  },
+  heroCategory: {
+    fontSize: 11,
+    fontWeight: '700',
+    color: '#AAAAAA',
+    letterSpacing: 2,
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  heroCity: {
+    fontSize: 52,
+    fontWeight: '900',
+    color: '#1A1A2E',
+    textAlign: 'center',
+    lineHeight: 58,
+    letterSpacing: -1,
+  },
+  heroState: {
+    fontSize: 22,
+    fontWeight: '600',
+    color: '#4A90D9',
+    marginTop: 4,
+    marginBottom: 22,
+    textAlign: 'center',
+  },
+  heroDivider: {
+    width: 56,
+    height: 3,
+    backgroundColor: '#F5C842',
+    borderRadius: 2,
+    marginBottom: 20,
+  },
+  heroPrice: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#1A1A2E',
+    marginBottom: 20,
+    textAlign: 'center',
+  },
+  heroVotePill: {
+    backgroundColor: '#F5C842',
+    borderRadius: 99,
+    paddingHorizontal: 22,
+    paddingVertical: 9,
+  },
+  heroVotePillText: {
+    fontSize: 14,
+    fontWeight: '800',
+    color: '#1A1A2E',
+  },
+  groupSummary: {
+    backgroundColor: '#242438',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 480,
+    marginBottom: 16,
+  },
+  // groupTitle: {
+  //   fontSize: 11,
+  //   fontWeight: '700',
+  //   color: '#6B7A99',
+  //   letterSpacing: 2,
+  //   marginBottom: 16,
+  // },
+  tiebreakBadge: {
+    backgroundColor: '#1E3A6A',
+    borderRadius: 10,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    marginBottom: 14,
+  },
+  tiebreakText: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#7AB3F5',
+    textAlign: 'center',
+  },
+  // totalVotesText: {
+  //   fontSize: 13,
+  //   color: '#6B7A99',
+  //   marginBottom: 16,
+  // },
+  prefBarsSection: {
+    marginTop: 4,
+  },
+  prefBarsLabel: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#4A5568',
+    letterSpacing: 1.5,
+    marginBottom: 10,
+  },
+  prefBarRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
+  prefBarDot: {
+    width: 24,
+    height: 24,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: 10,
+    flexShrink: 0,
+  },
+  prefBarInitial: {
+    fontSize: 10,
+    fontWeight: '700',
+    color: '#FFFFFF',
+  },
+  prefBarTrack: {
+    flex: 1,
+    height: 8,
+    backgroundColor: '#353550',
+    borderRadius: 4,
+    overflow: 'hidden',
+    marginRight: 10,
+  },
+  prefBarFill: {
+    height: '100%',
+    borderRadius: 4,
+  },
+  prefBarValue: {
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#8899AA',
+    width: 36,
+    textAlign: 'right',
+  },
+  travelCard: {
+    backgroundColor: '#FFFFFF',
+    borderRadius: 20,
+    padding: 24,
+    width: '100%',
+    maxWidth: 480,
+    marginBottom: 24,
+  },
+  travelSection: {
+    marginBottom: 4,
+    paddingVertical: 8,
+  },
+  travelRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 8,
+  },
+  travelLabel: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#1A1A2E',
+    letterSpacing: 0.5,
+  },
+  viewButton: {
+    backgroundColor: '#FFFFFF',
+    borderWidth: 2,
+    borderColor: '#4A90D9',
+    borderRadius: 8,
+    paddingHorizontal: 16,
+    paddingVertical: 6,
+  },
+  viewButtonSelected: {
+    backgroundColor: '#4A90D9',
+    borderColor: '#4A90D9',
+  },
+  viewButtonText: {
+    fontSize: 12,
+    fontWeight: '700',
+    color: '#4A90D9',
+  },
+  viewButtonTextSelected: {
+    color: '#FFFFFF',
+  },
+  selectedContainer: {
+    backgroundColor: '#F0F7FF',
+    borderRadius: 8,
+    padding: 10,
+    borderLeftWidth: 3,
+    borderLeftColor: '#28A745',
+  },
+  selectedAirline: {
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#1A1A2E',
+    marginBottom: 2,
+  },
+  selectedDetails: {
+    fontSize: 12,
+    color: '#666',
+    marginBottom: 3,
+  },
+  selectedPrice: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#28A745',
+  },
+  noSelectionText: {
+    fontSize: 12,
+    color: '#AAA',
+    fontStyle: 'italic',
+  },
+  travelDivider: {
+    height: 1,
+    backgroundColor: '#F0F0F0',
+    marginVertical: 4,
+  },
+});
 
 // ============================================
 // MAIN COMPARE SCREEN
@@ -558,10 +1067,16 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
   voteMembers = [],
   votes = [],
   currentUserId,
+  userColorMap,
   onBack,
   onVote,
   locked = false,
   votedDestinationIds = [],
+  winner,
+  doneUserIds = new Set(),
+  onDoneVoting,
+  currentUserDone = false,
+  currentUserHasVoted = false,
 }) => {
   // Track selections for each destination
   const [destinationsWithSelections, setDestinationsWithSelections] = useState<DestinationWithSelections[]>(() => {
@@ -613,7 +1128,7 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
           userId,
           label,
           initial: initialFromLabel(label),
-          color: colorFromUserId(userId),
+          color: userColorMap?.get(userId) ?? colorFromUserId(userId),
         };
       });
     },
@@ -713,54 +1228,124 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
 
   // const canDone = !locked && selectedIds.size > 0;
 
+  // When all users are done voting, show the full-screen winner reveal
+  const showReveal = locked && Boolean(winner);
+
   return (
     <View style={styles.container}>
       {/* Header */}
-      <View style={styles.header}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton} disabled={locked}>
-          <Text style={[styles.backText, locked && styles.backTextDisabled]}>← Back</Text>
+      <View style={[styles.header, showReveal && styles.headerDark]}>
+        <TouchableOpacity onPress={onBack} style={styles.backButton} disabled={locked || currentUserDone}>
+          <Text style={[styles.backText, (locked || currentUserDone) && styles.backTextDisabled, showReveal && styles.backTextLight]}>
+            ← Back
+          </Text>
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>
-          {locked ? 'VOTING CLOSED' : 'VOTE FOR YOUR DESTINATION!'}
+        <Text style={[styles.headerTitle, showReveal && styles.headerTitleLight]}>
+          {showReveal ? 'DESTINATION CHOSEN!' : (locked || currentUserDone) ? 'VOTING CLOSED' : 'VOTE FOR YOUR DESTINATIONS!'}
         </Text>
         <View style={styles.headerSpacer} />
       </View>
 
-      {/* Cards Container */}
-      <ScrollView
-        horizontal
-        showsHorizontalScrollIndicator={false}
-        style={styles.cardsScroll}
-        contentContainerStyle={[styles.cardsContainer, { flexGrow: 1 }]}
-      >
-        {destinationsWithSelections.map((destination) => {
-          const voterProfiles = getVoterProfilesForDestination(destination.id);
-          const hasCurrentUserVoted = Boolean(
-            currentUserId && voterProfiles.some((profile) => profile.userId === currentUserId)
-          );
-          const isVoted = locked
-            ? (votedDestinationIds || []).includes(destination.id)
-            : hasCurrentUserVoted;
+      {/* Full-screen winner reveal (replaces cards when voting closes) */}
+      {showReveal ? (
+        <WinnerReveal
+          winner={winner!}
+          winnerDestination={destinationsWithSelections.find((d) => d.id === winner!.destinationId)}
+          votes={votes}
+          voteMembers={voteMembers}
+          userColorMap={userColorMap}
+          tripDetails={tripDetails}
+          onViewDepartureFlight={() => {
+            const wd = destinationsWithSelections.find((d) => d.id === winner!.destinationId);
+            if (wd) openDepartureFlightModal(wd);
+          }}
+          onViewReturnFlight={() => {
+            const wd = destinationsWithSelections.find((d) => d.id === winner!.destinationId);
+            if (wd) openReturnFlightModal(wd);
+          }}
+          onViewHotels={() => {
+            const wd = destinationsWithSelections.find((d) => d.id === winner!.destinationId);
+            if (wd) openHotelModal(wd);
+          }}
+        />
+      ) : (
+        <>
+          {/* Cards Container */}
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            style={styles.cardsScroll}
+            contentContainerStyle={[styles.cardsContainer, { flexGrow: 1 }]}
+          >
+            {destinationsWithSelections.map((destination) => {
+              const voterProfiles = getVoterProfilesForDestination(destination.id);
+              const hasCurrentUserVoted = Boolean(
+                currentUserId && voterProfiles.some((profile) => profile.userId === currentUserId)
+              );
+              // const isVoted = locked
+              //   ? (votedDestinationIds || []).includes(destination.id)
+              //   : hasCurrentUserVoted;
 
-          return (
-            <DestinationCard
-              key={destination.id}
-              destination={destination}
-              voterProfiles={voterProfiles}
-              hasCurrentUserVoted={hasCurrentUserVoted}
-              tripDetails={tripDetails}
-              onViewDepartureFlight={() => openDepartureFlightModal(destination)}
-              onViewReturnFlight={() => openReturnFlightModal(destination)}
-              onViewHotels={() => openHotelModal(destination)}
-              onVote={() => onVote(destination.id, hasCurrentUserVoted)}
-              locked={locked}
-              isVoted={isVoted}
-            />
-          );
-        })}
-      </ScrollView>
+              return (
+                <DestinationCard
+                  key={destination.id}
+                  destination={destination}
+                  voterProfiles={voterProfiles}
+                  hasCurrentUserVoted={hasCurrentUserVoted}
+                  tripDetails={tripDetails}
+                  onViewDepartureFlight={() => openDepartureFlightModal(destination)}
+                  onViewReturnFlight={() => openReturnFlightModal(destination)}
+                  onViewHotels={() => openHotelModal(destination)}
+                  onVote={() => onVote(destination.id, hasCurrentUserVoted)}
+                  locked={locked}
+                  // isVoted={isVoted}
+                  currentUserDone={currentUserDone}
+                />
+              );
+            })}
+          </ScrollView>
 
-      {/* Flight Modal */}
+          {/* Done Voting Footer */}
+          {!locked && (
+            <View style={styles.doneFooter}>
+              {/* Member done-status chips */}
+              {voteMembers.length > 0 && (
+                <View style={styles.doneStatusRow}>
+                  {voteMembers.map((member) => {
+                    const isDone = doneUserIds.has(member.userId);
+                    const label = member.displayName || member.handle || 'User';
+                    const initial = label.trim().charAt(0).toUpperCase();
+                    const color = userColorMap?.get(member.userId) ?? colorFromUserId(member.userId);
+                    return (
+                      <View key={member.userId} style={[styles.doneChip, isDone && styles.doneChipDone]}>
+                        <View style={[styles.doneChipAvatar, { backgroundColor: color }]}>
+                          <Text style={styles.doneChipInitial}>{initial}</Text>
+                        </View>
+                        <Text style={[styles.doneChipLabel, isDone && styles.doneChipLabelDone]} numberOfLines={1}>
+                          {isDone ? 'Done' : 'Voting…'}
+                        </Text>
+                        {isDone && <Text style={styles.doneCheck}>✓</Text>}
+                      </View>
+                    );
+                  })}
+                </View>
+              )}
+
+              <TouchableOpacity
+                style={[styles.doneButton, currentUserDone && styles.doneButtonDone, (!currentUserHasVoted && !currentUserDone) && styles.doneButtonDisabled]}
+                onPress={onDoneVoting}
+                disabled={currentUserDone || !currentUserHasVoted}
+              >
+                <Text style={[styles.doneButtonText, currentUserDone && styles.doneButtonTextDone, (!currentUserHasVoted && !currentUserDone) && styles.doneButtonTextDisabled]}>
+                  {currentUserDone ? 'WAITING FOR OTHERS…' : 'DONE VOTING'}
+                </Text>
+              </TouchableOpacity>
+            </View>
+          )}
+        </>
+      )}
+
+      {/* Flight + Hotel modals — always present so selections are preserved */}
       <FlightModal
         visible={flightModalVisible}
         destination={activeDestination}
@@ -776,8 +1361,6 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
         }}
         onClose={() => setFlightModalVisible(false)}
       />
-
-      {/* Hotel Modal */}
       <HotelModal
         visible={hotelModalVisible}
         destination={activeDestination}
@@ -825,6 +1408,16 @@ const styles = StyleSheet.create({
   backTextDisabled: {
     color: '#CCC',
   },
+  headerDark: {
+    backgroundColor: '#1A1A2E',
+    borderBottomColor: '#2D2D44',
+  },
+  headerTitleLight: {
+    color: '#F5C842',
+  },
+  backTextLight: {
+    color: '#8899AA',
+  },
   headerTitle: {
     fontSize: 24,
     fontWeight: '800',
@@ -834,12 +1427,54 @@ const styles = StyleSheet.create({
   headerSpacer: {
     width: 60,
   },
+  // winnerBanner: {
+  //   flexDirection: 'row',
+  //   alignItems: 'center',
+  //   backgroundColor: '#FFF8E7',
+  //   borderBottomWidth: 1,
+  //   borderBottomColor: '#F5C842',
+  //   paddingHorizontal: 24,
+  //   paddingVertical: 14,
+  //   gap: 14,
+  // },
+  // winnerBadge: {
+  //   width: 44,
+  //   height: 44,
+  //   borderRadius: 22,
+  //   backgroundColor: '#F5C842',
+  //   justifyContent: 'center',
+  //   alignItems: 'center',
+  // },
+  // winnerBadgeText: {
+  //   fontSize: 22,
+  //   color: '#1A1A2E',
+  // },
+  // winnerText: {
+  //   flex: 1,
+  // },
+  // winnerLabel: {
+  //   fontSize: 11,
+  //   fontWeight: '700',
+  //   color: '#B07B00',
+  //   letterSpacing: 1,
+  //   marginBottom: 2,
+  // },
+  // winnerCity: {
+  //   fontSize: 20,
+  //   fontWeight: '800',
+  //   color: '#1A1A2E',
+  // },
+  // winnerTiebreak: {
+  //   fontSize: 12,
+  //   color: '#666',
+  //   marginTop: 2,
+  // },
   cardsScroll: {
     flex: 1,
   },
   cardsContainer: {
     padding: 24,
-    paddingBottom: 40,
+    paddingBottom: 24,
     gap: 24,
     // stretch children to fill the ScrollView's height (cross axis)
     alignItems: 'stretch',
@@ -1000,12 +1635,12 @@ const styles = StyleSheet.create({
     color: '#999',
     fontStyle: 'italic',
   },
-  selectedText: {
-    fontSize: 12,
-    color: '#28A745',
-    marginTop: 6,
-    fontWeight: '500',
-  },
+  // selectedText: {
+  //   fontSize: 12,
+  //   color: '#28A745',
+  //   marginTop: 6,
+  //   fontWeight: '500',
+  // },
   voteButton: {
     backgroundColor: '#F5C842',
     borderRadius: 12,
@@ -1183,6 +1818,89 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '700',
     color: '#1A1A2E',
+  },
+  // Done voting footer
+  doneFooter: {
+    backgroundColor: '#FFFFFF',
+    borderTopWidth: 1,
+    borderTopColor: '#E8E8E8',
+    paddingHorizontal: 24,
+    paddingVertical: 16,
+    gap: 12,
+  },
+  doneStatusRow: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
+  },
+  doneChip: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#F2F5FA',
+    borderRadius: 999,
+    paddingVertical: 5,
+    paddingHorizontal: 10,
+    gap: 6,
+    borderWidth: 1,
+    borderColor: '#E0E0E0',
+  },
+  doneChipDone: {
+    backgroundColor: '#EDFBF0',
+    borderColor: '#27AE60',
+  },
+  doneChipAvatar: {
+    width: 22,
+    height: 22,
+    borderRadius: 11,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  doneChipInitial: {
+    color: '#FFFFFF',
+    fontWeight: '700',
+    fontSize: 10,
+  },
+  doneChipLabel: {
+    fontSize: 12,
+    color: '#666',
+    fontWeight: '500',
+  },
+  doneChipLabelDone: {
+    color: '#1A7A40',
+    fontWeight: '600',
+  },
+  doneCheck: {
+    fontSize: 12,
+    color: '#27AE60',
+    fontWeight: '700',
+  },
+  doneButton: {
+    backgroundColor: '#1A1A2E',
+    borderRadius: 12,
+    paddingVertical: 16,
+    alignItems: 'center',
+  },
+  doneButtonDone: {
+    backgroundColor: '#CBD5E1',
+  },
+  doneButtonText: {
+    fontSize: 16,
+    fontWeight: '800',
+    color: '#FFFFFF',
+    letterSpacing: 0.5,
+  },
+  doneButtonTextDone: {
+    color: '#7A8899',
+  },
+  doneButtonDisabled: {
+    backgroundColor: '#4A4A6A',
+    opacity: 0.5,
+  },
+  doneButtonTextDisabled: {
+    color: '#AAAACC',
+  },
+  voteButtonLockedText: {
+    color: '#7A8899',
   },
 });
 
