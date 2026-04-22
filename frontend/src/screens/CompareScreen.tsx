@@ -82,6 +82,7 @@ interface CompareScreenProps {
   doneUserIds?: Set<string>;
   onDoneVoting?: () => void;
   currentUserDone?: boolean;
+  currentUserHasVoted?: boolean;
 }
 
 function initialFromLabel(label: string): string {
@@ -1075,6 +1076,7 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
   doneUserIds = new Set(),
   onDoneVoting,
   currentUserDone = false,
+  currentUserHasVoted = false,
 }) => {
   // Track selections for each destination
   const [destinationsWithSelections, setDestinationsWithSelections] = useState<DestinationWithSelections[]>(() => {
@@ -1331,11 +1333,11 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
               )}
 
               <TouchableOpacity
-                style={[styles.doneButton, currentUserDone && styles.doneButtonDone]}
+                style={[styles.doneButton, currentUserDone && styles.doneButtonDone, (!currentUserHasVoted && !currentUserDone) && styles.doneButtonDisabled]}
                 onPress={onDoneVoting}
-                disabled={currentUserDone}
+                disabled={currentUserDone || !currentUserHasVoted}
               >
-                <Text style={[styles.doneButtonText, currentUserDone && styles.doneButtonTextDone]}>
+                <Text style={[styles.doneButtonText, currentUserDone && styles.doneButtonTextDone, (!currentUserHasVoted && !currentUserDone) && styles.doneButtonTextDisabled]}>
                   {currentUserDone ? 'WAITING FOR OTHERS…' : 'DONE VOTING'}
                 </Text>
               </TouchableOpacity>
@@ -1890,6 +1892,13 @@ const styles = StyleSheet.create({
   },
   doneButtonTextDone: {
     color: '#7A8899',
+  },
+  doneButtonDisabled: {
+    backgroundColor: '#4A4A6A',
+    opacity: 0.5,
+  },
+  doneButtonTextDisabled: {
+    color: '#AAAACC',
   },
   voteButtonLockedText: {
     color: '#7A8899',

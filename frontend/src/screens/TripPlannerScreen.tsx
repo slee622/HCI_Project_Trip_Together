@@ -610,6 +610,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
   }, [stage, compareList, votes, destinationAttributes, livePreferences]);
 
   const currentUserDone = Boolean(currentUserId && doneUserIds.has(currentUserId));
+  const currentUserHasVoted = Boolean(currentUserId && votes.some((v) => v.userId === currentUserId));
 
   // Guard against running the DB-fetch+transition more than once
   const transitioningRef = useRef(false);
@@ -1340,6 +1341,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
           doneUserIds={doneUserIds}
           onDoneVoting={handleDoneVoting}
           currentUserDone={currentUserDone}
+          currentUserHasVoted={currentUserHasVoted}
         />
       )}
     </View>
