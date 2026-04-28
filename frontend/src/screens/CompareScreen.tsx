@@ -95,6 +95,14 @@ function colorFromUserId(userId: string): string {
   return MEMBER_COLOR_PALETTE[hash % MEMBER_COLOR_PALETTE.length];
 }
 
+function formatTime(time?: string): string {
+  return time ? `${time} ET` : '--:--';
+}
+
+function formatFlightTimes(departureTime?: string, arrivalTime?: string): string {
+  return `Dep ${formatTime(departureTime)} · Arr ${formatTime(arrivalTime)}`;
+}
+
 // ============================================
 // FLIGHT SELECTION MODAL
 // ============================================
@@ -150,7 +158,6 @@ const FlightModal: React.FC<FlightModalProps> = ({
 
   if (!destination) return null;
 
-  const formatTime = (time?: string) => time || '--:--';
   const formatStops = (stops?: number) => {
     if (stops === undefined || stops === 0) return 'Nonstop';
     return `${stops} stop${stops > 1 ? 's' : ''}`;
@@ -198,7 +205,7 @@ const FlightModal: React.FC<FlightModalProps> = ({
                   <View style={styles.flightInfo}>
                     <Text style={styles.flightAirline}>{flight.airline}</Text>
                     <Text style={styles.flightDetails}>
-                      {formatTime(flight.departureTime)} → {formatTime(flight.returnTime)} · {formatStops(flight.stops)}
+                      {formatFlightTimes(flight.departureTime, flight.returnTime)} · {formatStops(flight.stops)}
                     </Text>
                   </View>
                   <Text style={styles.flightPrice}>${flight.price}</Text>
@@ -459,7 +466,7 @@ const DestinationCard: React.FC<DestinationCardProps> = ({
             <View style={styles.selectedContainer}>
               <Text style={styles.selectedAirline}>{destination.selectedDepartureFlight.airline}</Text>
               <Text style={styles.selectedDetails}>
-                {destination.selectedDepartureFlight.departureTime || '--:--'} · {destination.selectedDepartureFlight.stops === 0 ? 'Nonstop' : `${destination.selectedDepartureFlight.stops} stop${(destination.selectedDepartureFlight.stops || 0) > 1 ? 's' : ''}`}
+                {formatFlightTimes(destination.selectedDepartureFlight.departureTime, destination.selectedDepartureFlight.returnTime)} · {destination.selectedDepartureFlight.stops === 0 ? 'Nonstop' : `${destination.selectedDepartureFlight.stops} stop${(destination.selectedDepartureFlight.stops || 0) > 1 ? 's' : ''}`}
               </Text>
               <Text style={styles.selectedPrice}>${destination.selectedDepartureFlight.price} × {tripDetails.travelers} = ${prices.departureFlightTotal}</Text>
             </View>
@@ -485,7 +492,7 @@ const DestinationCard: React.FC<DestinationCardProps> = ({
             <View style={styles.selectedContainer}>
               <Text style={styles.selectedAirline}>{destination.selectedReturnFlight.airline}</Text>
               <Text style={styles.selectedDetails}>
-                {destination.selectedReturnFlight.departureTime || '--:--'} · {destination.selectedReturnFlight.stops === 0 ? 'Nonstop' : `${destination.selectedReturnFlight.stops} stop${(destination.selectedReturnFlight.stops || 0) > 1 ? 's' : ''}`}
+                {formatFlightTimes(destination.selectedReturnFlight.departureTime, destination.selectedReturnFlight.returnTime)} · {destination.selectedReturnFlight.stops === 0 ? 'Nonstop' : `${destination.selectedReturnFlight.stops} stop${(destination.selectedReturnFlight.stops || 0) > 1 ? 's' : ''}`}
               </Text>
               <Text style={styles.selectedPrice}>${destination.selectedReturnFlight.price} × {tripDetails.travelers} = ${prices.returnFlightTotal}</Text>
             </View>
@@ -624,8 +631,18 @@ const WinnerReveal: React.FC<WinnerRevealProps> = ({
     if (winnerDestination?.selectedHotel) {
       hotelTotal = winnerDestination.selectedHotel.nightlyRate * nights;
     }
-    return { departureFlightTotal, returnFlightTotal, hotelTotal };
+    return {
+      departureFlightTotal,
+      returnFlightTotal,
+      hotelTotal,
+      total: departureFlightTotal + returnFlightTotal + hotelTotal,
+    };
   }, [winnerDestination, tripDetails.travelers, nights]);
+
+  const hasCalculatedSelections =
+    !!winnerDestination?.selectedDepartureFlight ||
+    !!winnerDestination?.selectedReturnFlight ||
+    !!winnerDestination?.selectedHotel;
 
   return (
     <View style={revealStyles.root}>
@@ -669,7 +686,9 @@ const WinnerReveal: React.FC<WinnerRevealProps> = ({
           <View style={revealStyles.heroDivider} />
 
           <Text style={revealStyles.heroPrice}>
-            {winnerDestination?.priceRange ?? 'Price TBD'}
+            {hasCalculatedSelections
+              ? `$${prices.total.toLocaleString()}`
+              : (winnerDestination?.priceRange ?? 'Price TBD')}
           </Text>
 
           <View style={revealStyles.heroVotePill}>
@@ -732,7 +751,7 @@ const WinnerReveal: React.FC<WinnerRevealProps> = ({
               <View style={revealStyles.selectedContainer}>
                 <Text style={revealStyles.selectedAirline}>{winnerDestination.selectedDepartureFlight.airline}</Text>
                 <Text style={revealStyles.selectedDetails}>
-                  {winnerDestination.selectedDepartureFlight.departureTime || '--:--'} · {winnerDestination.selectedDepartureFlight.stops === 0 ? 'Nonstop' : `${winnerDestination.selectedDepartureFlight.stops} stop${(winnerDestination.selectedDepartureFlight.stops || 0) > 1 ? 's' : ''}`}
+                  {formatFlightTimes(winnerDestination.selectedDepartureFlight.departureTime, winnerDestination.selectedDepartureFlight.returnTime)} · {winnerDestination.selectedDepartureFlight.stops === 0 ? 'Nonstop' : `${winnerDestination.selectedDepartureFlight.stops} stop${(winnerDestination.selectedDepartureFlight.stops || 0) > 1 ? 's' : ''}`}
                 </Text>
                 <Text style={revealStyles.selectedPrice}>
                   ${winnerDestination.selectedDepartureFlight.price} × {tripDetails.travelers} = ${prices.departureFlightTotal}
@@ -762,7 +781,7 @@ const WinnerReveal: React.FC<WinnerRevealProps> = ({
               <View style={revealStyles.selectedContainer}>
                 <Text style={revealStyles.selectedAirline}>{winnerDestination.selectedReturnFlight.airline}</Text>
                 <Text style={revealStyles.selectedDetails}>
-                  {winnerDestination.selectedReturnFlight.departureTime || '--:--'} · {winnerDestination.selectedReturnFlight.stops === 0 ? 'Nonstop' : `${winnerDestination.selectedReturnFlight.stops} stop${(winnerDestination.selectedReturnFlight.stops || 0) > 1 ? 's' : ''}`}
+                  {formatFlightTimes(winnerDestination.selectedReturnFlight.departureTime, winnerDestination.selectedReturnFlight.returnTime)} · {winnerDestination.selectedReturnFlight.stops === 0 ? 'Nonstop' : `${winnerDestination.selectedReturnFlight.stops} stop${(winnerDestination.selectedReturnFlight.stops || 0) > 1 ? 's' : ''}`}
                 </Text>
                 <Text style={revealStyles.selectedPrice}>
                   ${winnerDestination.selectedReturnFlight.price} × {tripDetails.travelers} = ${prices.returnFlightTotal}

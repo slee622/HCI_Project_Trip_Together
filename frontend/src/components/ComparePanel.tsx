@@ -123,18 +123,35 @@ const CompareDestinationCard: React.FC<CompareDestinationCardProps> = ({
   locked = false,
 }) => {
   const cardRef = useRef<View>(null);
+  const removeButtonRef = useRef<TouchableOpacity>(null);
 
   const handleRemove = useCallback(() => onRemove(), [onRemove]);
 
   useEffect(() => {
     if (locked) return;
     const el = cardRef.current as any;
+    const btnEl = removeButtonRef.current as any;
     if (!el) return;
 
     let startX = 0;
     let isDragging = false;
 
+    const isClickOnButton = (e: any) => {
+      if (!btnEl) return false;
+      const btnRect = btnEl.getBoundingClientRect();
+      return (
+        e.clientX >= btnRect.left &&
+        e.clientX <= btnRect.right &&
+        e.clientY >= btnRect.top &&
+        e.clientY <= btnRect.bottom
+      );
+    };
+
     const onPointerDown = (e: any) => {
+      // Don't start dragging if clicking on the remove button
+      if (isClickOnButton(e)) {
+        return;
+      }
       // Only respond to primary button (left click / single touch)
       if (e.button !== 0 && e.pointerType === 'mouse') return;
       isDragging = true;
@@ -184,7 +201,7 @@ const CompareDestinationCard: React.FC<CompareDestinationCardProps> = ({
   return (
     <View ref={cardRef} style={styles.card}>
       {!locked && (
-        <TouchableOpacity style={styles.removeButton} onPress={onRemove}>
+        <TouchableOpacity ref={removeButtonRef} style={styles.removeButton} onPress={onRemove}>
           <Text style={styles.removeText}>×</Text>
         </TouchableOpacity>
       )}
@@ -267,14 +284,16 @@ const styles = StyleSheet.create({
   },
   removeButton: {
     position: 'absolute',
-    top: 4,
-    right: 8,
-    padding: 4,
+    top: 8,
+    right: 12,
+    padding: 8,
+    zIndex: 10,
   },
   removeText: {
-    fontSize: 18,
+    fontSize: 24,
     color: '#999',
     fontWeight: '300',
+    lineHeight: 24,
   },
   cardCity: {
     fontSize: 14,

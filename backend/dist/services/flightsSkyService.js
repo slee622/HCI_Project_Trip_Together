@@ -26,21 +26,33 @@ function markRapidApiRateLimited() {
 }
 async function fetchFlightsSky(url) {
     if (isRapidApiTemporarilyDisabled()) {
+        console.warn('[FlightsSky] API temporarily disabled due to rate limiting');
         return null;
     }
-    const response = await fetch(url, {
-        method: 'GET',
-        headers: getHeaders(),
-    });
-    if (response.status === 429) {
-        markRapidApiRateLimited();
+    try {
+        const response = await fetch(url, {
+            method: 'GET',
+            headers: getHeaders(),
+        });
+        if (response.status === 429) {
+            markRapidApiRateLimited();
+            console.error('[FlightsSky] Rate limited (429) - check your RapidAPI plan or usage limits');
+            return null;
+        }
+        return response;
+    }
+    catch (error) {
+        console.error('[FlightsSky] Network error during fetch:', error);
         return null;
     }
-    return response;
 }
 // Check if API key is configured
 function isFlightsSkyConfigured() {
-    return !!RAPIDAPI_KEY;
+    const configured = !!RAPIDAPI_KEY;
+    if (typeof process !== 'undefined' && process.env.NODE_ENV !== 'production') {
+        console.log(`[FlightsSky] API Configured: ${configured}, Key length: ${RAPIDAPI_KEY?.length || 0}`);
+    }
+    return configured;
 }
 function isFlightsSkyAvailable() {
     return isFlightsSkyConfigured() && !isRapidApiTemporarilyDisabled();
@@ -53,29 +65,157 @@ function getHeaders() {
         'Content-Type': 'application/json',
     };
 }
+function formatTimeInEastern(timeValue) {
+    if (!timeValue) {
+        return undefined;
+    }
+    const parsedTime = new Date(timeValue);
+    if (Number.isNaN(parsedTime.getTime())) {
+        return undefined;
+    }
+    return new Intl.DateTimeFormat('en-US', {
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+        timeZone: 'America/New_York',
+    }).format(parsedTime);
+}
+// ============================================
+// STATE TO MAJOR AIRPORTS MAPPING
+// ============================================
+// When a city doesn't have a direct airport code, fall back to the major airport in its state
+const stateToMajorAirports = {
+    // US States
+    'AL': 'Birmingham-Shuttlesworth International',
+    'AK': 'Ted Stevens Anchorage International',
+    'AZ': 'Phoenix Sky Harbor International',
+    'AR': 'Bill and Hillary Clinton National',
+    'CA': 'Los Angeles International',
+    'CO': 'Denver International',
+    'CT': 'Bradley International',
+    'DE': 'Philadelphia International',
+    'FL': 'Miami International',
+    'GA': 'Hartsfield-Jackson Atlanta International',
+    'HI': 'Daniel K. Inouye International',
+    'ID': 'Boise Air Terminal',
+    'IL': 'Chicago O\'Hare International',
+    'IN': 'Indianapolis International',
+    'IA': 'Des Moines International',
+    'KS': 'Kansas City International',
+    'KY': 'Louisville International',
+    'LA': 'Louis Armstrong New Orleans International',
+    'ME': 'Portland International',
+    'MD': 'Baltimore-Washington International',
+    'MA': 'Boston Logan International',
+    'MI': 'Detroit Metropolitan',
+    'MN': 'Minneapolis-Saint Paul International',
+    'MS': 'Jackson-Medgar Wiley Evers',
+    'MO': 'Saint Louis Lambert International',
+    'MT': 'Billings Logan International',
+    'NE': 'Eppley Airfield',
+    'NV': 'Harry Reid International',
+    'NH': 'Manchester-Boston Regional',
+    'NJ': 'Newark Liberty International',
+    'NM': 'Sunport International',
+    'NY': 'John F. Kennedy International',
+    'NC': 'Charlotte Douglas International',
+    'ND': 'Bismarck Theodore Roosevelt International',
+    'OH': 'John Glenn Columbus International',
+    'OK': 'Will Rogers World',
+    'OR': 'Portland International',
+    'PA': 'Philadelphia International',
+    'RI': 'Theodore F. Green State',
+    'SC': 'Charleston International',
+    'SD': 'Joe Foss Field',
+    'TN': 'Nashville International',
+    'TX': 'Dallas-Fort Worth International',
+    'UT': 'Salt Lake City International',
+    'VT': 'Edward F. Knapp State',
+    'VA': 'Richmond International',
+    'WA': 'Seattle-Tacoma International',
+    'WV': 'Yeager Airport',
+    'WI': 'General Mitchell International',
+    'WY': 'Jackson Hole Airport',
+};
+/**
+ * Extract state abbreviation from location string
+ * Handles formats like "City, ST" or "City, State Name"
+ */
+function extractStateFromLocation(location) {
+    // Try to match "City, ST" format (e.g., "Miami, FL")
+    const stateCodeMatch = location.match(/,\s*([A-Z]{2})(?:\s|$)/);
+    if (stateCodeMatch) {
+        return stateCodeMatch[1];
+    }
+    // Try to match full state names
+    const stateNames = {
+        'Alabama': 'AL', 'Alaska': 'AK', 'Arizona': 'AZ', 'Arkansas': 'AR',
+        'California': 'CA', 'Colorado': 'CO', 'Connecticut': 'CT', 'Delaware': 'DE',
+        'Florida': 'FL', 'Georgia': 'GA', 'Hawaii': 'HI', 'Idaho': 'ID',
+        'Illinois': 'IL', 'Indiana': 'IN', 'Iowa': 'IA', 'Kansas': 'KS',
+        'Kentucky': 'KY', 'Louisiana': 'LA', 'Maine': 'ME', 'Maryland': 'MD',
+        'Massachusetts': 'MA', 'Michigan': 'MI', 'Minnesota': 'MN', 'Mississippi': 'MS',
+        'Missouri': 'MO', 'Montana': 'MT', 'Nebraska': 'NE', 'Nevada': 'NV',
+        'New Hampshire': 'NH', 'New Jersey': 'NJ', 'New Mexico': 'NM', 'New York': 'NY',
+        'North Carolina': 'NC', 'North Dakota': 'ND', 'Ohio': 'OH', 'Oklahoma': 'OK',
+        'Oregon': 'OR', 'Pennsylvania': 'PA', 'Rhode Island': 'RI', 'South Carolina': 'SC',
+        'South Dakota': 'SD', 'Tennessee': 'TN', 'Texas': 'TX', 'Utah': 'UT',
+        'Vermont': 'VT', 'Virginia': 'VA', 'Washington': 'WA', 'West Virginia': 'WV',
+        'Wisconsin': 'WI', 'Wyoming': 'WY',
+    };
+    for (const [stateName, stateCode] of Object.entries(stateNames)) {
+        if (location.includes(stateName)) {
+            return stateCode;
+        }
+    }
+    return null;
+}
 /**
  * Helper: Execute a single airport search query
  */
 async function performAirportSearch(query) {
     if (isRapidApiTemporarilyDisabled()) {
+        console.warn(`[FlightsSky] Skipping airport search for "${query}" - API rate limited`);
         return null;
     }
     try {
         const url = `https://${RAPIDAPI_HOST}/flights/auto-complete?query=${encodeURIComponent(query)}`;
+        console.log(`[FlightsSky] Searching airport: "${query}"`);
         const response = await fetchFlightsSky(url);
         if (!response) {
+            console.warn(`[FlightsSky] No response from airport search for "${query}"`);
             return null;
         }
         if (!response.ok) {
             if (response.status === 429) {
+                console.error(`[FlightsSky] Rate limited while searching for "${query}"`);
                 return null;
             }
             const errorText = await response.text();
+            console.error(`[FlightsSky] Airport search failed for "${query}":`, response.status, errorText);
             throw new Error(`API request failed: ${response.status} ${errorText}`.trim());
         }
         const data = await response.json();
-        // Find first airport result
+        // Find first airport result - prefer larger/primary airports
         if (data.data && Array.isArray(data.data)) {
+            // First pass: look for primary airports (prefer those with names NOT containing "/" or secondary indicators)
+            for (const item of data.data) {
+                if (item.navigation?.entityType === 'AIRPORT' || item.skyId) {
+                    const name = item.presentation?.title || item.name || '';
+                    // Skip secondary/regional airports (those with "/" in the name like "Savannah / Hilton Head")
+                    if (!name.includes('/') && !name.includes('Regional') && !name.includes('County')) {
+                        return {
+                            entityId: item.navigation?.entityId || item.entityId,
+                            skyId: item.skyId || item.navigation?.localizedName,
+                            name: name,
+                            iata: item.presentation?.subtitle?.match(/\(([A-Z]{3})\)/)?.[1],
+                            stateCode: item.presentation?.subtitle?.match(/,\s*([A-Z]{2})\b/)?.[1],
+                            type: 'airport',
+                        };
+                    }
+                }
+            }
+            // Second pass: if no primary airport found, accept any airport (including regional)
             for (const item of data.data) {
                 if (item.navigation?.entityType === 'AIRPORT' || item.skyId) {
                     return {
@@ -83,6 +223,7 @@ async function performAirportSearch(query) {
                         skyId: item.skyId || item.navigation?.localizedName,
                         name: item.presentation?.title || item.name,
                         iata: item.presentation?.subtitle?.match(/\(([A-Z]{3})\)/)?.[1],
+                        stateCode: item.presentation?.subtitle?.match(/,\s*([A-Z]{2})\b/)?.[1],
                         type: 'airport',
                     };
                 }
@@ -94,6 +235,7 @@ async function performAirportSearch(query) {
                     entityId: item.navigation?.entityId || item.entityId || '',
                     skyId: item.skyId || '',
                     name: item.presentation?.title || item.name || query,
+                    stateCode: item.presentation?.subtitle?.match(/,\s*([A-Z]{2})\b/)?.[1],
                     type: item.navigation?.entityType || 'city',
                 };
             }
@@ -110,6 +252,7 @@ async function performAirportSearch(query) {
 /**
  * Search for airport/location entity ID by query (city name or airport code)
  * Falls back to nearby airports if initial search returns a city, not an airport
+ * Falls back to major state airport if no nearby airport is found
  */
 async function searchAirport(query) {
     if (!isFlightsSkyConfigured()) {
@@ -126,9 +269,20 @@ async function searchAirport(query) {
         return initialResult;
     }
     // If we got a non-airport result (city, town, etc.), try to find a nearby airport
-    // by searching for "[city name] airport"
+    // Prefer the major airport for the state if we can infer one.
     if (initialResult && initialResult.type !== 'airport') {
-        console.log(`Initial search returned non-airport "${initialResult.name}" (${initialResult.type}), searching for nearby airports...`);
+        const stateCode = initialResult.stateCode || extractStateFromLocation(query);
+        if (stateCode && stateToMajorAirports[stateCode]) {
+            const majorAirportName = stateToMajorAirports[stateCode];
+            console.log(`Found state ${stateCode}, searching for major airport: ${majorAirportName}`);
+            const majorAirport = await performAirportSearch(majorAirportName);
+            if (majorAirport && majorAirport.type === 'airport') {
+                console.log(`Found major state airport: ${majorAirport.name} (${majorAirport.iata})`);
+                return majorAirport;
+            }
+        }
+        // Fall back to a nearby airport search if state-based lookup didn't work
+        console.log(`No major state airport found for "${initialResult.name}", searching for nearby airports...`);
         const nearbyAirportQuery = `${initialResult.name} airport`;
         const nearbyAirport = await performAirportSearch(nearbyAirportQuery);
         if (nearbyAirport && nearbyAirport.type === 'airport') {
@@ -154,6 +308,19 @@ async function searchFlights(originCode, destinationCode, departureDate, returnD
         return [];
     }
     try {
+        // Validate dates - departure must be today or in the future, and return must follow departure
+        const today = new Date();
+        today.setHours(0, 0, 0, 0); // Reset time to midnight
+        const departure = new Date(departureDate);
+        const returnTravelDate = returnDate ? new Date(returnDate) : null;
+        if (departure < today) {
+            console.warn(`Flight search rejected: departure date ${departureDate} is in the past`);
+            return [];
+        }
+        if (returnTravelDate && returnTravelDate <= departure) {
+            console.warn(`Flight search rejected: return date ${returnDate} is not after departure date ${departureDate}`);
+            return [];
+        }
         // First, get entity IDs for origin and destination
         const [originEntity, destEntity] = await Promise.all([
             searchAirport(originCode),
@@ -180,7 +347,7 @@ async function searchFlights(originCode, destinationCode, departureDate, returnD
             date: departureDate,
             adults: travelers.toString(),
             currency: 'USD',
-            market: 'en-US',
+            market: 'US',
             countryCode: 'US',
         });
         if (returnDate) {
@@ -213,9 +380,9 @@ async function searchFlights(originCode, destinationCode, departureDate, returnD
             const airline = carrier.name || 'Unknown Airline';
             // Get timing
             const departure = firstLeg.departure || '';
-            const departureTime = departure ? new Date(departure).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : undefined;
+            const departureTime = formatTimeInEastern(departure);
             const arrival = firstLeg.arrival || '';
-            const arrivalTime = arrival ? new Date(arrival).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false }) : undefined;
+            const arrivalTime = formatTimeInEastern(arrival);
             // Get stops
             const stops = (firstLeg.stopCount ?? firstLeg.segments?.length - 1) || 0;
             if (price) {
@@ -295,6 +462,19 @@ async function searchHotels(destination, checkInDate, checkOutDate, travelers = 
         return [];
     }
     try {
+        // Validate hotel dates before hitting the API
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const checkIn = new Date(checkInDate);
+        const checkOut = new Date(checkOutDate);
+        if (checkIn < today) {
+            console.warn(`Hotel search rejected: check-in date ${checkInDate} is in the past`);
+            return [];
+        }
+        if (checkOut <= checkIn) {
+            console.warn(`Hotel search rejected: check-out date ${checkOutDate} is not after check-in date ${checkInDate}`);
+            return [];
+        }
         // Get entity ID for destination
         const locationEntity = await searchHotelLocation(destination);
         if (!locationEntity) {
@@ -310,7 +490,7 @@ async function searchHotels(destination, checkInDate, checkOutDate, travelers = 
             adults: travelers.toString(),
             rooms: rooms.toString(),
             currency: 'USD',
-            market: 'en-US',
+            market: 'US',
             countryCode: 'US',
         });
         const url = `https://${RAPIDAPI_HOST}/hotels/search?${params.toString()}`;
@@ -328,13 +508,21 @@ async function searchHotels(destination, checkInDate, checkOutDate, travelers = 
             throw new Error(`Hotel search failed: ${response.status}`);
         }
         const data = await response.json();
+        console.log('Hotel API response data:', JSON.stringify(data).substring(0, 500));
         // Calculate nights for nightly rate
-        const checkIn = new Date(checkInDate);
-        const checkOut = new Date(checkOutDate);
         const nights = Math.max(1, Math.ceil((checkOut.getTime() - checkIn.getTime()) / (1000 * 60 * 60 * 24)));
         // Parse results
         const results = [];
-        const hotels = data.data?.hotels || data.data || [];
+        let hotels = data.data?.results?.hotels ||
+            data.data?.hotels ||
+            data.hotels ||
+            data.data?.results?.groupedItineraries ||
+            data.data ||
+            [];
+        // Ensure hotels is an array
+        if (!Array.isArray(hotels)) {
+            hotels = [];
+        }
         for (const hotel of hotels.slice(0, 10)) {
             const totalPrice = hotel.price?.raw || hotel.rawPrice || hotel.price || 0;
             const nightlyRate = Math.round(parseFloat(totalPrice.toString()) / nights);

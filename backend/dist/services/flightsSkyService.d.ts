@@ -12,10 +12,12 @@ interface FlightsSkyEntity {
     name: string;
     iata?: string;
     type: string;
+    stateCode?: string;
 }
 /**
  * Search for airport/location entity ID by query (city name or airport code)
  * Falls back to nearby airports if initial search returns a city, not an airport
+ * Falls back to major state airport if no nearby airport is found
  */
 export declare function searchAirport(query: string): Promise<FlightsSkyEntity | null>;
 /**
