@@ -20,6 +20,7 @@ import ConfettiCannon from 'react-native-confetti-cannon';
 import { CompareDestination } from '../types';
 import { searchFlights, searchHotels, FlightOption, HotelOption } from '../services/api';
 import { WinnerInfo, MEMBER_COLOR_PALETTE } from './TripPlannerScreen';
+import { StartupDestination } from '../services/startupState';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
@@ -70,6 +71,7 @@ interface CompareScreenProps {
     travelers: number;
   };
   users?: Array<{ id: string; initial: string; color: string; preferences?: Record<string, number> }>;
+  destinationAttributes?: Map<string, StartupDestination>;
   voteMembers?: VoteMember[];
   votes?: DestinationVote[];
   currentUserId?: string;
@@ -83,6 +85,27 @@ interface CompareScreenProps {
   onDoneVoting?: () => void;
   currentUserDone?: boolean;
   currentUserHasVoted?: boolean;
+}
+
+function computePreferenceMatch(
+  preferences: Record<string, number> | undefined,
+  dest: StartupDestination | undefined
+): number {
+  if (!preferences || !dest) return 5;
+  // Each pair: [user preference value, corresponding destination score].
+  // Mirrors the mapping in userPrefsToGroupPrefs (types/index.ts).
+  const dims: [number, number][] = [
+    [preferences.adventure, dest.nightlifeScore],       // adventure → nightlife
+    [10 - preferences.adventure, dest.relaxationScore], // relaxing → relaxation
+    [preferences.budget, dest.budgetScore],             // budget → budget
+    [preferences.setting, dest.natureScore],            // nature-seeking → nature
+    [10 - preferences.setting, dest.urbanScore],        // city-seeking → urban
+    [10 - preferences.weather, dest.temperatureScore],  // warm-seeking → temperature
+    [10 - preferences.focus, dest.foodScore],           // food-focused → food
+  ];
+  // Absolute-difference match: 10 = perfect, 0 = opposite. Average across dims.
+  const total = dims.reduce((sum, [p, s]) => sum + (10 - Math.abs(p - s)), 0);
+  return Math.min(10, Math.max(0, total / dims.length));
 }
 
 function initialFromLabel(label: string): string {
@@ -1083,6 +1106,7 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
   destinations,
   tripDetails,
   users = [],
+  destinationAttributes,
   voteMembers = [],
   votes = [],
   currentUserId,
@@ -1105,7 +1129,7 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
         userId: user.id,
         initial: user.initial,
         color: user.color,
-        value: user.preferences?.overall || 5 + Math.random() * 4,
+        value: computePreferenceMatch(user.preferences, destinationAttributes?.get(dest.id)),
       })),
     }));
   });
@@ -1159,12 +1183,12 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
     setDestinationsWithSelections((prev) => {
       const existingById = new Map(prev.map((d) => [d.id, d]));
 
-      const buildUserBars = () =>
+      const buildUserBars = (dest: CompareDestination) =>
         users.map((user) => ({
           userId: user.id,
           initial: user.initial,
           color: user.color,
-          value: user.preferences?.overall || 5 + Math.random() * 4,
+          value: computePreferenceMatch(user.preferences, destinationAttributes?.get(dest.id)),
         }));
 
       return destinations.map((dest) => {
@@ -1176,16 +1200,16 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
             selectedDepartureFlight: existing.selectedDepartureFlight,
             selectedReturnFlight: existing.selectedReturnFlight,
             selectedHotel: existing.selectedHotel,
-            userBars: existing.userBars,
+            userBars: buildUserBars(dest),
           };
         }
         return {
           ...dest,
-          userBars: buildUserBars(),
+          userBars: buildUserBars(dest),
         };
       });
     });
-  }, [destinations, users]);
+  }, [destinations, users, destinationAttributes]);
 
   // Toggle a destination's vote selection (kept for reference — per-card voting now used instead)
   // const handleToggleVote = useCallback((destinationId: string) => {

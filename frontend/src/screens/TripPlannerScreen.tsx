@@ -28,6 +28,7 @@ import {
   listTripCompareDestinations,
   listTripCustomCompareMarkers,
   listTripMapMarkers,
+  getTripStartupState,
   StartupCompareOption,
   StartupCustomCompareMarker,
   StartupDestination,
@@ -287,6 +288,32 @@ function clampPreference(value: number): number {
   return Math.max(0, Math.min(10, Math.round(value)));
 }
 
+function computeAveragePreferences(
+  myPrefs: UserPreferences,
+  livePrefs: StartupPreference[],
+  myUserId?: string
+): UserPreferences {
+  const others = myUserId ? livePrefs.filter((p) => p.userId !== myUserId) : livePrefs;
+  const n = others.length + 1;
+  const sum = others.reduce(
+    (acc, p) => ({
+      adventure: acc.adventure + p.adventure,
+      budget: acc.budget + p.budget,
+      setting: acc.setting + p.setting,
+      weather: acc.weather + p.weather,
+      focus: acc.focus + p.focus,
+    }),
+    { adventure: myPrefs.adventure, budget: myPrefs.budget, setting: myPrefs.setting, weather: myPrefs.weather, focus: myPrefs.focus }
+  );
+  return {
+    adventure: clampPreference(sum.adventure / n),
+    budget: clampPreference(sum.budget / n),
+    setting: clampPreference(sum.setting / n),
+    weather: clampPreference(sum.weather / n),
+    focus: clampPreference(sum.focus / n),
+  };
+}
+
 function resolvePreferencesFromStartup(
   startupState: StartupState | null | undefined,
   currentUserId?: string
@@ -363,13 +390,28 @@ function mapCustomCompareMarkersToCompareDestinations(
 
 function mapGroupMembersToCompareUsers(
   members: StartupGroupMember[],
-  colorMap: Map<string, string>
+  colorMap: Map<string, string>,
+  livePreferences: StartupPreference[],
+  currentUserId?: string,
+  currentUserPreferences?: UserPreferences
 ): Array<{ id: string; initial: string; color: string; preferences?: Record<string, number> }> {
-  return members.map((member) => ({
-    id: member.userId,
-    initial: (member.displayName || member.handle || 'U').trim().charAt(0).toUpperCase(),
-    color: colorMap.get(member.userId) ?? MEMBER_COLOR_PALETTE[0],
-  }));
+  const prefByUserId = new Map(livePreferences.map((p) => [p.userId, p]));
+  return members.map((member) => {
+    const isCurrentUser = currentUserId && member.userId === currentUserId;
+    // For the current user, use their live slider state so the bar is always
+    // up-to-date even before their preferences are persisted to the DB.
+    const prefs = isCurrentUser && currentUserPreferences
+      ? currentUserPreferences
+      : prefByUserId.get(member.userId);
+    return {
+      id: member.userId,
+      initial: (member.displayName || member.handle || 'U').trim().charAt(0).toUpperCase(),
+      color: colorMap.get(member.userId) ?? MEMBER_COLOR_PALETTE[0],
+      preferences: prefs
+        ? { adventure: prefs.adventure, budget: prefs.budget, setting: prefs.setting, weather: prefs.weather, focus: prefs.focus }
+        : undefined,
+    };
+  });
 }
 
 function buildPreferenceMarkerByDimension(
@@ -566,8 +608,8 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     return map;
   }, [groupMembers]);
   const compareUsers = useMemo(
-    () => mapGroupMembersToCompareUsers(groupMembers, userColorMap),
-    [groupMembers, userColorMap]
+    () => mapGroupMembersToCompareUsers(groupMembers, userColorMap, livePreferences, currentUserId, preferences),
+    [groupMembers, userColorMap, livePreferences, currentUserId, preferences]
   );
   const memberPreferenceMarkers = useMemo(
     () =>
@@ -579,28 +621,26 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       ),
     [groupMembers, livePreferences, currentUserId, userColorMap]
   );
-  const destinationAttributes = useMemo<Map<string, StartupDestination>>(() => {
+  const [destinationAttributes, setDestinationAttributes] = useState<Map<string, StartupDestination>>(() => {
     const map = new Map<string, StartupDestination>();
     for (const rec of scopedStartupState?.recommendations ?? []) {
       map.set(rec.destination.id, rec.destination);
     }
     return map;
-  }, [scopedStartupState]);
-  const winner = useMemo<WinnerInfo | null>(() => {
-    if (stage !== 'voted') return null;
-    return computeWinner(compareList, votes, destinationAttributes, livePreferences);
-  }, [stage, compareList, votes, destinationAttributes, livePreferences]);
+  });
+  // Frozen winner set once from canonical DB data so it never changes after reveal.
+  const [winner, setWinner] = useState<WinnerInfo | null>(null);
   const currentUserDone = Boolean(currentUserId && doneUserIds.has(currentUserId));
   const currentUserHasVoted = Boolean(currentUserId && votes.some((v) => v.userId === currentUserId));
 
   // Guard against running the DB-fetch+transition more than once
   const transitioningRef = useRef(false);
 
-  // When all members are done, re-fetch canonical votes from DB so every
-  // client computes the winner from the same authoritative data, then flip
-  // to 'voted'. Using local realtime state alone causes divergence because
-  // different clients may have processed different subsets of vote broadcasts
-  // at the moment they each decide to transition.
+  // When all members are done, pull the full canonical trip state so that
+  // votes, preferences, and destination attributes are identical on every
+  // client before computing the winner. This prevents divergence from
+  // realtime events arriving in different orders or tiebreaker inputs
+  // differing across clients.
   useEffect(() => {
     if (stage === 'voted') return;
     if (doneUserIds.size === 0) return;
@@ -611,21 +651,38 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     transitioningRef.current = true;
 
     const transition = async () => {
+      let canonicalVotes = votes;
+      let canonicalPrefs = livePreferences;
+      let canonicalAttrs = destinationAttributes;
+
       if (tripSessionId) {
         try {
-          const freshVotes = await fetchTripVotes(tripSessionId);
-          setVotes(
-            freshVotes.map((v) => ({
-              destinationId: v.destinationId,
-              userId: v.userId,
-              vote: v.vote,
-              updatedAt: v.updatedAt,
-            }))
-          );
+          const freshState = await getTripStartupState(tripSessionId);
+
+          canonicalVotes = (freshState.votes ?? []).map((v) => ({
+            destinationId: v.destinationId,
+            userId: v.userId,
+            vote: v.vote,
+            updatedAt: v.updatedAt,
+          }));
+          canonicalPrefs = freshState.preferences ?? livePreferences;
+
+          const attrMap = new Map(destinationAttributes);
+          for (const rec of freshState.recommendations ?? []) {
+            attrMap.set(rec.destination.id, rec.destination);
+          }
+          canonicalAttrs = attrMap;
+
+          setVotes(canonicalVotes);
+          setLivePreferences(canonicalPrefs);
+          setDestinationAttributes(canonicalAttrs);
         } catch (err) {
-          console.warn('fetchTripVotes failed; using local vote state:', err);
+          console.warn('getTripStartupState failed during transition; using local state:', err);
         }
       }
+
+      // Compute winner once from the canonical snapshot and freeze it.
+      setWinner(computeWinner(compareList, canonicalVotes, canonicalAttrs, canonicalPrefs));
       setStage('voted');
     };
 
@@ -640,6 +697,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     [tripMapMarkers]
   );
   const tripRealtimeChannelRef = useRef<RealtimeChannel | null>(null);
+  const memberRefreshInFlightRef = useRef(false);
 
   useEffect(() => {
     tripMapMarkersRef.current = tripMapMarkers;
@@ -688,9 +746,20 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       );
       setRecommendations(results);
       if (tripSessionId) {
-        saveTripRecommendations(tripSessionId, results).catch((persistError) => {
-          console.warn('Failed to persist recommendations:', persistError);
-        });
+        saveTripRecommendations(tripSessionId, results)
+          .then(() => getTripStartupState(tripSessionId))
+          .then((freshState) => {
+            setDestinationAttributes((prev) => {
+              const updated = new Map(prev);
+              for (const rec of freshState.recommendations ?? []) {
+                updated.set(rec.destination.id, rec.destination);
+              }
+              return updated;
+            });
+          })
+          .catch((persistError) => {
+            console.warn('Failed to persist recommendations:', persistError);
+          });
       }
     } catch (error) {
       console.error('Failed to fetch recommendations:', error);
@@ -814,14 +883,14 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       });
   }, [tripSessionId]);
 
-  // Load recommendations on mount / preference change.
+  // Load recommendations on mount / preference change (averaged across all members).
   useEffect(() => {
     if (skipNextAutoFetchRef.current) {
       skipNextAutoFetchRef.current = false;
       return;
     }
-    fetchRecommendations(preferences);
-  }, [fetchRecommendations, preferences]);
+    fetchRecommendations(computeAveragePreferences(preferences, livePreferences, currentUserId));
+  }, [fetchRecommendations, preferences, livePreferences, currentUserId]);
 
   // Hydrate planner only when startup payload matches the active trip.
   useEffect(() => {
@@ -836,6 +905,8 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       setLivePreferences([]);
       setGroupMembers([]);
       setVotes([]);
+      setWinner(null);
+      transitioningRef.current = false;
       skipNextAutoFetchRef.current = false;
       return;
     }
@@ -846,6 +917,13 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
     setLivePreferences(scopedStartupState.preferences || []);
     setGroupMembers(scopedStartupState.groupMembers || []);
     setVotes(scopedStartupState.votes || []);
+    setDestinationAttributes((prev) => {
+      const updated = new Map(prev);
+      for (const rec of scopedStartupState.recommendations ?? []) {
+        updated.set(rec.destination.id, rec.destination);
+      }
+      return updated;
+    });
 
     skipNextAutoFetchRef.current = (scopedStartupState.recommendations || []).length > 0;
   }, [tripSessionId, scopedStartupState, currentUserId]);
@@ -894,9 +972,23 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
       if (prev.some((member) => member.userId === userId)) {
         return prev;
       }
+      // Add placeholder immediately so the UI doesn't break, then fetch real names.
+      if (tripSessionId && !memberRefreshInFlightRef.current) {
+        memberRefreshInFlightRef.current = true;
+        getTripStartupState(tripSessionId)
+          .then((state) => {
+            setGroupMembers(state.groupMembers || []);
+          })
+          .catch((err) => {
+            console.warn('Failed to refresh group members:', err);
+          })
+          .finally(() => {
+            memberRefreshInFlightRef.current = false;
+          });
+      }
       return [...prev, buildFallbackGroupMember(userId)];
     });
-  }, [currentUserId]);
+  }, [currentUserId, tripSessionId]);
 
   const upsertLivePreference = useCallback((row: TripPreferenceRealtimeRow): void => {
     const mapped: StartupPreference = {
@@ -1254,9 +1346,9 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
             console.warn('Failed to persist preferences:', persistError);
           });
       }
-      fetchRecommendations(newPrefs);
+      fetchRecommendations(computeAveragePreferences(newPrefs, livePreferences, currentUserId));
     }, DEBOUNCE_DELAY);
-  }, [preferences, fetchRecommendations, tripSessionId, currentUserId, broadcastTripEvent]);
+  }, [preferences, livePreferences, fetchRecommendations, tripSessionId, currentUserId, broadcastTripEvent]);
 
   // Cleanup debounce on unmount
   useEffect(() => {
@@ -1720,6 +1812,7 @@ export const TripPlannerScreen: React.FC<TripPlannerScreenProps> = ({
             travelers: activeTrip.travelers,
           }}
           users={compareUsers}
+          destinationAttributes={destinationAttributes}
           voteMembers={groupMembers}
           votes={votes}
           currentUserId={currentUserId}
