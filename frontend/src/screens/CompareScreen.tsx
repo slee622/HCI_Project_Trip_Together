@@ -1254,11 +1254,14 @@ export const CompareScreen: React.FC<CompareScreenProps> = ({
     <View style={styles.container}>
       {/* Header */}
       <View style={[styles.header, showReveal && styles.headerDark]}>
-        <TouchableOpacity onPress={onBack} style={styles.backButton} disabled={locked || currentUserDone}>
-          <Text style={[styles.backText, (locked || currentUserDone) && styles.backTextDisabled, showReveal && styles.backTextLight]}>
-            ← Back
-          </Text>
-        </TouchableOpacity>
+        {!showReveal && (
+          <TouchableOpacity onPress={onBack} style={styles.backButton} disabled={locked || currentUserDone}>
+            <Text style={[styles.backText, (locked || currentUserDone) && styles.backTextDisabled]}>
+              ← Back
+            </Text>
+          </TouchableOpacity>
+        )}
+        {showReveal && <View style={styles.backButton} />}
         <Text style={[styles.headerTitle, showReveal && styles.headerTitleLight]}>
           {showReveal ? 'DESTINATION CHOSEN!' : (locked || currentUserDone) ? 'VOTING CLOSED' : 'VOTE FOR YOUR DESTINATIONS!'}
         </Text>
