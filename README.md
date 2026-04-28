@@ -30,3 +30,7 @@ Backend:
 
 - `PORT` (optional, defaults to `3001`)
 - `RAPIDAPI_KEY`
+
+# AI Credit
+
+https://github.com/slee622/HCI_Project_Trip_Together/blob/main/DESIGN_DECISIONS.md is a list of all major parts of the codebase that AI was used for.
